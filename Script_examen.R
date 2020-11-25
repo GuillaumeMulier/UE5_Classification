@@ -30,3 +30,4 @@ glimpse(dix_pour_cent)
 ###
 
 vingt_pour_cent <- dix_pour_cent
+x_pour_cent <- vingt_pour_cent
