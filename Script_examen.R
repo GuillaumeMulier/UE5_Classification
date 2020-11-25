@@ -29,4 +29,6 @@ glimpse(dix_pour_cent)
 
 ###
 
+## lalalallaa
+
 vingt_pour_cent <- dix_pour_cent
