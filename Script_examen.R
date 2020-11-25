@@ -77,10 +77,3 @@ dix_pour_cent <- read_csv("https://archive.ics.uci.edu/ml/machine-learning-datab
 sum(is.na(dix_pour_cent)) # Pas de données manquantes
 glimpse(dix_pour_cent)
 
-###
-
-
-## lalalallaa
-
-vingt_pour_cent <- dix_pour_cent
-x_pour_cent <- vingt_pour_cent
