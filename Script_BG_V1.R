@@ -12,6 +12,12 @@ library(mclust)
 library(fastcluster)
 library(FactoMineR)
 library(ggplot2)
+library(devtools)
+library(JLutils)
+library(ggpubr)
+library(factoextra)
+library(cluster)
+
 
 seed <- 7
 set.seed(seed)
@@ -24,11 +30,7 @@ PCA_NS <- PCA(data_NS, scale.unit = FALSE, graph = FALSE)
 PPCA <- plot.PCA(data_NS, choix = "var", label = "none", axes = c(1, 2)) +
   ggtitle(paste("Representation des individus du groupe", seed))
 
-# Réduction de dimension en utilisant l'ACP
-res.pca <- prcomp(data_NS,  scale = TRUE)
-ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord) # Coordonnées des individus
-ind.coord$cluster <- factor(res.km$cluster) # Ajouter les clusters obtenus à l'aide de l'algorithme k-means
-head(ind.coord) # Inspection des données
+
 # Pourcentage de la variance expliquée par les dimensions
 eigenvalue <- round(get_eigenvalue(res.pca), 1)
 variance.percent <- eigenvalue$variance.percent
@@ -54,7 +56,7 @@ inertie <- sort(arbre$height, decreasing = TRUE)
 plot(inertie[1:20], type = "s", xlab = "Nombre de classes", ylab = "Inertie")
 # On voit trois sauts assez nets à 2, 3 et 4 classes, que nous avons représentés ci-dessous respectivement en vert, en rouge et en bleu
 plot(inertie[1:20], type = "s", xlab = "Nombre de classes", ylab = "Inertie")
-points(c(2, 3, 4), inertie[c(2, 3, 4)], col = c("green3", "red3", "blue3"), cex = 2, lwd = 3)
+points(c(2, 3, 4, 5), inertie[c(2, 3, 4, 5)], col = c("green3", "red3", "blue3","purple3"), cex = 2, lwd = 3)
 # La fonction rect.hclust permet de visualiser les différentes partitions directement sur le dendrogramme.
 plot(arbre, labels = FALSE, main = "Partition en 2, 3, 4 ou 5 classes", xlab = "", ylab = "", sub = "", axes = FALSE, hang = -1)
 rect.hclust(arbre, 2, border = "green3")
@@ -62,9 +64,7 @@ rect.hclust(arbre, 3, border = "red3")
 rect.hclust(arbre, 4, border = "blue3")
 rect.hclust(arbre, 5, border = "purple3")
 
-library(devtools)
 install_github("larmarange/JLutils")
-library(JLutils)
 best.cutree(arbre)
 # On peut également représenter le graphique des pertes relatives d’inertie avec graph=TRUE. La meilleure partition selon ce critère est représentée par un point noir et la seconde par un point gris.
 best.cutree(arbre, min = 2, graph = TRUE, xlab = "Nombre de classes", ylab = "Inertie relative")
@@ -75,9 +75,6 @@ A2Rplot(arbre, k = 4, boxes = FALSE, col.up = "gray50", col.down = brewer.pal(4,
 
 
 # Kmean
-library(ggpubr)
-library(factoextra)
-
 
 # Elbow Method
 intra <- rep(NA, l = 15)
@@ -93,13 +90,12 @@ fviz_nbclust(data_NS, kmeans, method = "wss")
 # Average Silhouette Method
 fviz_nbclust(data_NS, kmeans, method = "silhouette")
 # Gap statistique
-library(cluster)
 gap_stat <- clusGap(data_NS, FUN = kmeans, nstart = 25,
                     K.max = 10, B = 50)
 fviz_gap_stat(gap_stat)
 
-# Qu'est ce que cela veut dire ??
-kmeans.rep <- replicate(20, kmeans(data_NS, 15))
+# Qu'est ce que cela veut dire
+kmeans.rep <- replicate(20, kmeans(data_NS, 5))
 best <- which.min(unlist(kmeans.rep['tot.withinss', ]))
 resKmeans <- kmeans.rep[, best]
 resKmeans
@@ -113,6 +109,12 @@ fviz_cluster(res.km, data = data_NS,
              ggtheme = theme_bw()
 )
 
+# Réduction de dimension en utilisant l'ACP
+res.pca <- prcomp(data_NS,  scale = TRUE)
+ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord) # Coordonnées des individus
+
+ind.coord$cluster <- factor(res.km$cluster) # Ajouter les clusters obtenus à l'aide de l'algorithme k-means
+head(ind.coord) # Inspection des données
 ggscatter(
   ind.coord, x = "Dim.1", y = "Dim.2", 
   color = "cluster", palette = "npg", ellipse = TRUE, ellipse.type = "convex",
@@ -129,6 +131,10 @@ MG <- Mclust(data_NS)
 MG
 summary(MG)
 summary(MG$BIC)
+summary(MG$icl)
+mclustICL(data_NS)
+
+
 plot(MG$BIC)
 plot(MG, what = "BIC", ylim = range(MG$BIC[,-(1:5)], na.rm = TRUE),
      legendArgs = list(x = "topright"))
