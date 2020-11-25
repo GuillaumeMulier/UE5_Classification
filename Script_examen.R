@@ -29,11 +29,10 @@ glimpse(dix_pour_cent)
 
 ###
 
-<<<<<<< HEAD
 vingt_pour_cent <- dix_pour_cent
-=======
+
 ## lalalallaa
 
 vingt_pour_cent <- dix_pour_cent
->>>>>>> 303eb13908c546a40021dba1ef5e05e23542598c
+
 x_pour_cent <- vingt_pour_cent
