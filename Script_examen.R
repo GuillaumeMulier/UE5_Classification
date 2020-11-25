@@ -28,3 +28,5 @@ sum(is.na(dix_pour_cent)) # Pas de données manquantes
 glimpse(dix_pour_cent)
 
 ###
+
+vingt_pour_cent <- dix_pour_cent
