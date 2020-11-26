@@ -1,0 +1,330 @@
+---
+title: "Devoir_Classificitation_2"
+author: "Benoit Gachet"
+date: "26/11/2020"
+output: word_document
+---
+
+```{r library, include=FALSE}
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+library(grid)
+library(tidyverse)
+library(mclust)
+library(FNN)
+library(C50)
+library(randomForest)
+
+
+```
+
+# Description de la base de données
+
+Dans ce devoir, nous avons utlisé à la base de données ElecGrid s'intéressant la stabilité du réseau élictrique. Chaque observation représente l'évaluation du système électrique avec 11 variables explicatives et 1 variable à expliquer. 
+- La variable à expliquer est stabf et nous infrome sur la stabilité du reseau électrique : "stable" ou "instable".
+- Les variables explicatives sont : tau1,tau2,tau3,tau4 représentent l'électricité produite respectivement à partir du noeud 1, 2, 3 et 4. Elles contribueront à déterminer si le système est stable ou non. p2,p3,p4 reprsentent l'énergie consommée respectivement sur le 2, 3 et 4. p1 représente, l'abs de p2,p3 et P4 et ne représente pas l'énergie consommée par le noeud 1. Elle n'est donc pas indépendante des autres et par conséquent, nous ne l'utiliserons pas. g1,g2,g3,g4 sont la valeur du prix de l'électricité sur les noeuds 1 à 4 à chaque observation. L'ensemble des ces variables permettent de déterminer si le réseau est stable ou non et sont indépendantes les unes des autres. Chacune d'entre elles sera donc traitée séparément.
+
+La base de donnée complète contient 10, observations. Nous avons utilisé dans notre jeux de données un sous ensemble de 1,000 observations (en utilisant le seed 7, numero de notre groupe).
+
+361 observations étaients stables et 639 instables. Il n'y avait aucune donnée manquante. L'ordre de grandeur entre les variable n'était pas identiques, nous l'avons pris en compte dans notre ACP.
+
+
+```{r data, include = FALSE}
+# Données supervisées -------------------------------
+ElecGrid <- fread("D:/Benoît/Desktop/Cours master 2/5_Classification/Devoir/Data_for_UCI_named.csv", data.table=F) 
+data_S <- ElecGrid[, -grep("^p1$|^stab$", colnames(ElecGrid))]
+any(is.na(data_S))
+head(data_S, n = 4)
+table(data_S$stabf)
+
+# Selection de votre sous-ensemble de données
+seed <- 7
+set.seed (seed)
+data <- data_S[sample(1:nrow(data_S), size = 1000), ]
+# analyse bases
+sum(is.na(data)) # Pas de données manquantes
+glimpse(data)
+table(data$stabf)
+summary(data)
+```
+
+
+Nous avons représenté la densité de probabilité pour chaque variable en fonction du statut "stable" et "instable". Nous notons que les courbes sont superposables pour les p et se différencient pour les autres variables. Nous pouvons donc faire l'hypothèse que les variables taux et gamma seront plus discriminantes pour classer les observations.
+
+```{r pressure, echo=FALSE}
+# Tau1 
+tau1l <- ggplot(data=data, aes(x=tau1,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(tau1), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("Tau1") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+# Tau2 
+tau2l <- ggplot(data=data, aes(x=tau2,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(tau2), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("Tau2") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+# Tau3 
+tau3l <- ggplot(data=data, aes(x=tau3,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(tau2), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("Tau3") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+# Tau4 
+tau4l <- ggplot(data=data, aes(x=tau4,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(tau4), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("Tau4") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#P2  
+p2l <- ggplot(data=data, aes(x=p2,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(tau2), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("p2") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#P3  
+p3l <- ggplot(data=data, aes(x=p3,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(p3), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("p3") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#P4  
+p4l <- ggplot(data=data, aes(x=p4,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(p4), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("p4") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#g1  
+g1l <- ggplot(data=data, aes(x=g1,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(g1), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("g1") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#g2  
+g2l <- ggplot(data=data, aes(x=g2,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(g2), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("g2") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#g3  
+g3l <- ggplot(data=data, aes(x=g3,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(g3), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("g3") +  
+  ylab("Density") + 
+  theme(legend.position="none")
+
+#g4  
+g4l <- ggplot(data=data, aes(x=g4,colour=stabf), fill=stabf)+
+  geom_density(alpha=.3) +
+  geom_vline(aes(xintercept = mean(g3), colour=stabf),linetype="dashed",color="grey",size=1)+
+  xlab("g4") +  
+  ylab("Density") + 
+  theme(legend.position="right")
+```
+
+
+
+```{r density pot}
+# Plot all density visualizations
+grid.arrange(tau1l + ggtitle(""),
+             tau2l + ggtitle(""),
+             tau3l + ggtitle(""),
+             tau4l + ggtitle(""),
+             p2l + ggtitle(""),
+             p3l + ggtitle(""),
+             p4l + ggtitle(""),
+             g1l + ggtitle(""),
+             g2l + ggtitle(""),
+             g3l + ggtitle(""),
+             g4l + ggtitle("") + theme(legend.position = "none"),
+             nrow = 3,
+             top = grid::textGrob("Electricity data Density Plot", 
+                            gp = grid::gpar(fontsize=7))
+)
+
+
+```
+
+Nous avosn également représneté la répartition des donnée et réduisant les dimension en utilisant PCA. Pour cela nous avons pris en compte les différences d'ordre de grandeur des variables. Nous mettons en évidence une distribution unique de fomer sphérique.
+
+```{r PCA, include = FALSE}
+# Réduction de dimension en utilisant l'ACP
+res.pca <- prcomp(data[,-12],  scale = TRUE)
+ind.coord <- as.data.frame(get_pca_ind(res.pca)$coord) # Coordonnées des individus
+head(ind.coord) # Inspection des données
+# Pourcentage de la variance expliquée par les dimensions
+eigenvalue <- round(get_eigenvalue(res.pca), 1)
+variance.percent <- eigenvalue$variance.percent
+head(eigenvalue)
+```
+
+
+```{r PCA, include = TRUE}
+ggscatter(
+  ind.coord, x = "Dim.1", y = "Dim.2",
+  xlab = paste0("Dim 1 (", variance.percent[1], "% )" ),
+  ylab = paste0("Dim 2 (", variance.percent[2], "% )" )
+)
+
+```
+
+
+# Classification suervisée.
+
+## Analys factorielles discriminante.
+
+Le modèle d'analyse factorielle discirminante fait l'yphothèse d'une distribuition gaussian de toutes les variables, ce qui ne semble pas être le cas à la lecture de nos courbres de densité.
+
+En imposant un modèle unique pour les variables explicatives, nous sélectionnant le modèle EEI (avec une distibution diagonale, de forme et de volume égaux) avec une erreur de classification de 0.186.
+
+En n'imposant pas le modèle pour les variables explicatives, les meilleur modèles, sélectionés sur le BIC sont EVI pour la classe stable et EEI pour la classe instable. Le risque d'erreur de classification est alors de 11,7%.
+
+le risque de classification après validation croisée est de :
+- ???
+
+Pourquoi dans le papier Scrucca utilise une jeu d'entrainement.
+
+# PCA
+
+```{r Analyse factorielle discriminante, include = FALSE}
+
+class <- data$stabf
+table(class)
+mod <- MclustDA(data[,-12], class, modelType = "EDDA")
+summary(mod)
+
+mod1 <- MclustDA(data[,-12], class)
+summary(mod1)
+
+cv <- cvMclustDA(mod)
+unlist(cv[c("error", "se")])
+
+cv1 <- cvMclustDA(mod1)
+unlist(cv1[c("error", "se")])
+
+
+
+# Validation - Avec apprentissage et validation croisée
+train <- sample(1:nrow(data), size = round(nrow(data)*2/3), replace = FALSE)
+X.train <- data[,-12][train,]
+Class.train <- class[train]
+table(Class.train)
+
+X.test <- data[,-12][-train,]
+Class.test <- class[-train]
+table(Class.test)
+Class.test
+
+mod1 <- MclustDA(X.train, Class.train, modelType = "EDDA")
+summary(mod1, newdata = X.test, newclass = Class.test)
+cv1 <- cvMclustDA(mod1) # A cross-validation error (10-fold cross-validation):
+unlist(cv1[c("error", "se")])
+
+mod2 <- MclustDA(X.train, Class.train)
+summary(mod2, newdata = X.test, newclass = Class.test)
+cv2 <- cvMclustDA(mod2) # A cross-validation error (10-fold cross-validation):
+unlist(cv2[c("error", "se")])
+
+
+```
+## K plus proches voisins
+
+Nous avons réalisé un deuxième type de classification en utilisant une analyse des K plus proches voisins. Pour cela nous avons  crée un sous groupe d'entrainement constitué de 2/3 des observations et un groupe test contitué du reste des observations. Nous avons fait varier le nombre de K voisins sélectionés pour trouver le K optimal puis réalisé un test de validation croisé pour améliorer nos résultats.
+
+L'erreur minimale est de 25%, obtenue en utilisant 1 et 9 plus proches voisins
+
+
+
+```{r K-means, include = FALSE}
+C <- knn(X.train,X.test,Class.train,k=3)
+mean(C!=Class.test)
+
+c_k <- NULL
+means_k <- NULL
+
+for (ii in 1:10) {
+  c_k <- knn(X.train,X.test,Class.train,k=ii)
+  means_k <- rbind(means_k, mean(c_k!=Class.test))
+
+}
+
+# Validation - Avec apprentissage et cross validation
+L <-  knn(X.train,X.test,Class.train, k=3)     # entraine le classifieur choisi
+mean(Class.test!=L) # évalue le risque
+table(Class.test,L)
+
+
+
+
+```
+
+# Arbre de classification
+
+L'arbre de claissification utilise toutes les vairables pour prédire le résultat avec une erreur à ....
+
+```{r Tree, include = FALSE}
+head(data)
+as.factor(data$stabf)
+tree <- C5.0(x = data[,-12], y = as.factor(data$stabf))
+tree
+summary(tree)
+```
+
+# Ramdom forest
+
+En utilisant la méthode random forest et en optimisant le nombre d'arbre à 4000 et le nombre de variable utilisé à chaque division de l'arbre (3), nous obtenu un taux de classification à 86,4%.
+
+
+```{r Random forest, include = FALSE}
+foret <- randomForest(data,as.factor(data$stabf),ntree=1000,importance=T,proximity=T)
+foret
+
+foret1 <- randomForest(as.factor(data$stabf)~.,data, ntree=5000, importance=T,proximity=T)
+foret1
+varImpPlot(foret1)
+foret1$importance
+foret1$importance[order(foret1$importance[, 1], decreasing = TRUE), ]
+plot(foret1$err.rate[, 1], type = "l", xlab = "nombre d'arbres", ylab = "erreur OOB") # 4000 arbres?
+foret2 <- randomForest(as.factor(data$stabf)~.,data, ntree=4000, mtry = 6, importance=T,proximity=T)
+foret2
+plot(foret2$err.rate[, 1], type = "l", xlab = "nombre d'arbres", ylab = "erreur OOB") # moisn bien avec 6 valeurs testées à chaque fois
+foret3 <- randomForest(as.factor(data$stabf)~.,data, ntree=4000, mtry = 2, importance=T,proximity=T) # idem avec 2
+foret3
+plot(foret3$err.rate[, 1], type = "l", xlab = "nombre d'arbres", ylab = "erreur OOB")
+foret4 <- randomForest(as.factor(data$stabf)~.,data, ntree=4000, mtry = 8, importance=T,proximity=T) # idem avec 2
+foret4
+plot(foret4$err.rate[, 1], type = "l", xlab = "nombre d'arbres", ylab = "erreur OOB")
+
+
+```
+
+
+
+
+
+
+### 2) Evaluation des tests
+
+### Validation croisée
+# le sous échantillon complémentaire pour évaluer le risque :
+
