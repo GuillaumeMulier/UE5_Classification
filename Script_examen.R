@@ -16,6 +16,8 @@ library(dendextend)
 library(purrr)
 library(scales)
 library(mclust)
+library(cowplot)
+library(ggpubr)
 
 theme_set(theme_light() +
             theme(plot.title = element_markdown(),
@@ -28,7 +30,8 @@ theme_set(theme_light() +
 
 conflict_prefer(name = "filter", winner = "dplyr")
 conflict_prefer(name = "summarise", winner = "dplyr")
-conflict_prefer("map", "purrr")
+conflict_prefer(name = "map", winner = "purrr")
+conflict_prefer(name = "get_legend", winner = "cowplot")
 
 #### Partie classification non supervisée ----
 
@@ -54,7 +57,7 @@ les_inconnus %>%
 
 les_inconnus_réduits <- les_inconnus %>% 
   mutate(across(everything(), .fns = ~ (.x - mean(.x)) / sd(.x)))
-# Variables réduites
+# Variables centrées réduites
 
 ## ACP
 
@@ -278,6 +281,9 @@ plot_ind3 <- fviz_cluster(kmeans_3, les_inconnus_réduits, ellipse.type = "conve
   theme(plot.title = element_markdown(size = 10),
         plot.subtitle = element_text(size = 7),
         legend.position = "none")
+# Pour une raison inconnue, fviz_cluster inverse les coordonnées sur le 1er axes principal
+plot_ind3 <- plot_ind3 +
+  scale_x_reverse(labels = function(x) -x)
 plot_ind3 + plot_axes 
 
 les_inconnus_shopenhauer$class_kmeans <- kmeans_3$cluster
@@ -309,6 +315,8 @@ plot_ind_gaus3 <- fviz_cluster(boules_gaus3, les_inconnus_réduits, ellipse.type
   theme(plot.title = element_markdown(size = 10),
         plot.subtitle = element_text(size = 7),
         legend.position = "none")
+plot_ind_gaus3 <- plot_ind_gaus3 +
+  scale_x_reverse(labels = function(x) -x)
 plot_ind_gaus3 + plot_axes 
 
 les_inconnus_shopenhauer$class_gaus <- boules_gaus3$classification
@@ -344,6 +352,125 @@ plot_diff <- les_inconnus_shopenhauer %>%
 
 dix_pour_cent <- read_csv("https://archive.ics.uci.edu/ml/machine-learning-databases/00471/Data_for_UCI_named.csv") %>% 
   select(-p1, -stab)
+set.seed(7)
+dix_pour_cent <- dix_pour_cent[sample(1:nrow(dix_pour_cent), size = 1000), ]
 sum(is.na(dix_pour_cent)) # Pas de données manquantes
 glimpse(dix_pour_cent)
 
+## Description de la base
+
+# Ordres de grandeur
+
+dix_pour_cent %>% 
+  summarise(across(tau1:g4, .fns = list(moyenne = mean, ecart_type = sd, mini = min, maxi = max))) %>% 
+  pivot_longer(everything(), names_to = c("Variable", "stat"), names_pattern = "^([a-z]*[0-9])_(.*)") %>% 
+  pivot_wider(names_from = "stat")
+# Pas les mêmes unités de variables, décision de centrer et réduire les variables
+
+dix_pour_cent_reduits <- dix_pour_cent %>% 
+  mutate(across(tau1:g4, .fns = ~ (.x - mean(.x)) / sd(.x)),
+         stabf = factor(stabf, levels = c("stable", "unstable"), labels = c("Stable", "Instable")))
+
+# Density plot
+
+helper <- tibble(noms = names(dix_pour_cent)[-12],
+                 titres = c("&tau;<sub>1</sub>", "&tau;<sub>2</sub>", "&tau;<sub>3</sub>", "&tau;<sub>4</sub>", 
+                            "P<sub>1</sub>", "P<sub>2</sub>", "P<sub>3</sub>",
+                            "G<sub>1</sub>", "G<sub>2</sub>", "G<sub>3</sub>", "G<sub>4</sub>"))
+
+density_plot <- function(var, data, titre){
+  ggplot(data = data, aes(x = .data[[var]], colour = stabf, fill = stabf))+
+    geom_density(alpha = 0.3) +
+    geom_vline(aes(xintercept = mean(.data[[var]])), linetype = "dashed", color = "darkgrey", size = 1) +
+    labs(x = titre[["titres"]][match(var, titre[["noms"]])],
+         y = "Densité") +  
+    scale_fill_discrete(name = "Stabilité du système") +
+    scale_color_discrete(name = "Stabilité du système") +
+    theme(axis.title.x = element_markdown())
+}
+legende <- get_legend(density_plot(var = "tau1", data = dix_pour_cent_reduits, titre = helper))
+liste_plot <- helper$noms %>% 
+  map(~ density_plot(var = .x, data = dix_pour_cent_reduits, titre = helper) +
+        theme(legend.position = "none"))
+liste_plot[[12]] <- legende
+ggarrange(plotlist = liste_plot, nrow = 3, ncol = 4)
+
+# ACP
+
+ACP_elec <- PCA(dix_pour_cent_reduits, scale.unit = TRUE, graph = FALSE, quali.sup = 12, ncp = 11)
+fviz_screeplot(ACP_elec, addlabels = TRUE, ncp = 11)
+# Il y a au total 11 compsantes principales qui expliquent tous environ la même part de variance
+plot_indACP <- function(acp, axes, couleur = "none") {
+  plot_axes <- fviz_pca_var(acp, repel = TRUE, axes = axes) +
+    labs(title = paste0("Cercle des corrélations des variables aux axes ", paste(axes, collapse = " et "))) +
+    theme(plot.title = element_markdown(size = 10))
+  plot_ind <- fviz_pca_ind(acp, geom.ind = "point", axes = axes, habillage = couleur) +
+    labs(title = paste0("Projection des individus sur les axes ", paste(axes, collapse = " et "), " de l'ACP")) +
+    theme(plot.title = element_markdown(size = 10),
+          legend.position = "bottom") +
+    scale_color_discrete(name = "Stabilité") +
+    guides(shape = FALSE,
+           color = guide_legend(override.aes = list(shape = c(19, 17))))
+  plot_ind + plot_axes
+}
+plot_indACP(acp = ACP_elec, axes = c(1, 2), couleur = 12)
+plot_indACP(acp = ACP_elec, axes = c(3, 4), couleur = 12)
+plot_indACP(acp = ACP_elec, axes = c(5, 6), couleur = 12)
+# en observant les 2 groupes sur les 6 1ers axes principaux, on peut voir qu'ils ont l'air difficiles à individualiser
+# Globalement, ils ont une forme sphérique, un volume assez équivalent (sur la projection en tout cas)
+
+### Classisification supervisée
+
+## Création des jeux d'entraînement/test et des échantillons pour cross-validation
+
+set.seed(7)
+num_test <- sample(1000, size = 700, replace = FALSE)
+ordre_cv <- sample(1000, size = 1000, replace = FALSE)
+
+# Echantillon de CV
+dix_pour_cent_CV <- cbind(dix_pour_cent_reduits[ordre_cv, ], ech = rep(1:10, each = 1000))
+
+# Echantillons test et d'apprentissage
+dix_pour_cent_app <- dix_pour_cent_reduits[num_test, ]
+dix_pour_cent_test <- dix_pour_cent_reduits[-num_test, ]
+
+## Analyse factorielle discriminante
+
+# Modèle avec même matrice de variance dans les 2 classes
+AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = c("EII", "VII"))
+AFD1$models
+# Modèle EII choisi car BIC plus grand
+
+AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "MclustDA", modelNames = c("EII", "VII"))
+# Choix modèle EII :
+mod_stable <- which.max(AFD2$models$Stable$BIC[, 1])
+mod_instable <- which.max(AFD2$models$Instable$BIC[, 1])
+AFD2$models$Stable$BIC[mod_stable, 1] + AFD2$models$Instable$BIC[mod_instable, 1]
+
+# Choix du modèle VII :
+mod_stable2 <- which.max(AFD2$models$Stable$BIC[, 2])
+mod_instable2 <- which.max(AFD2$models$Instable$BIC[, 2])
+AFD2$models$Stable$BIC[mod_stable2, 2] + AFD2$models$Instable$BIC[mod_instable2, 2]
+# Equivalence des EII et VII donc choix EII pour diminuer le nombre de paramètres
+
+AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = "EII")
+AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "MclustDA", modelNames = "EII")
+# Validation sur jeu test
+summary(AFD1, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf) # Risque = 17.33%
+summary(AFD2, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf) # Risque = 17.33%
+# Même risque pour les 2 mais pas même erreur
+
+# Cross-validation sur jeu complet
+erreur_AFD <- function(echantillon) {
+  test <- dix_pour_cent_CV %>% filter(ech == echantillon)
+  train <- dix_pour_cent_CV %>% filter(ech != echantillon)
+  AFD1 <- MclustDA(train[,-12], class = train$stabf, modelType = "EDDA", modelNames = "EII")
+  err1 <- summary(AFD1, newdata = test[, -12], newclass = test$stabf)$err.newdata
+  AFD2 <- MclustDA(train[,-12], class = train$stabf, modelType = "MclustDA", modelNames = "EII")
+  err2 <- summary(AFD2, newdata = test[, -12], newclass = test$stabf)$err.newdata
+  return(c(edda = err1, MclustDA = err2))
+}
+cross_val <- map_dfr(1:10, ~ erreur_AFD(.x), .id = "jeu")
+cross_val %>% 
+  summarise(across(edda:MclustDA, .fns = ~ mean(.x)))
+# Pour cross-validation, MclustDA (variances différentes dans les groupes meilleur)
