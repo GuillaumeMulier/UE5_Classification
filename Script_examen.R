@@ -18,6 +18,7 @@ library(scales)
 library(mclust)
 library(cowplot)
 library(ggpubr)
+library(FNN)
 
 theme_set(theme_light() +
             theme(plot.title = element_markdown(),
@@ -428,7 +429,7 @@ num_test <- sample(1000, size = 700, replace = FALSE)
 ordre_cv <- sample(1000, size = 1000, replace = FALSE)
 
 # Echantillon de CV
-dix_pour_cent_CV <- cbind(dix_pour_cent_reduits[ordre_cv, ], ech = rep(1:10, each = 1000))
+dix_pour_cent_CV <- cbind(dix_pour_cent_reduits[ordre_cv, ], ech = rep(1:10, each = 100))
 
 # Echantillons test et d'apprentissage
 dix_pour_cent_app <- dix_pour_cent_reduits[num_test, ]
@@ -474,3 +475,37 @@ cross_val <- map_dfr(1:10, ~ erreur_AFD(.x), .id = "jeu")
 cross_val %>% 
   summarise(across(edda:MclustDA, .fns = ~ mean(.x)))
 # Pour cross-validation, MclustDA (variances différentes dans les groupes meilleur)
+
+## K nearest neighbours
+
+# Trouver le meilleur K
+# Screening sur le jeu d'entraînement et de test
+erreur_knn <- function(echantillon = NULL, k) {
+  if (!is.null(echantillon)) {
+    test <- dix_pour_cent_CV %>% filter(ech == echantillon) %>% select(-ech)
+    train <- dix_pour_cent_CV %>% filter(ech != echantillon) %>% select(-ech)
+  } else {
+    train <- dix_pour_cent_app 
+    test <- dix_pour_cent_test
+  }
+  KNN <- knn(train = train[, -12],
+             test = test[, -12],
+             cl = train$stabf,
+             k = k)
+  return(c(erreur = mean(KNN != test$stabf)))
+}
+data_knn <- map_dfr(1:20, ~ erreur_knn(k = .x), .id = "k") %>% 
+  mutate(k = as.numeric(k))
+ggplot(data_knn, aes(x = k, y = erreur)) +
+  geom_point() +
+  geom_line()
+# Minimum pour k = 11
+
+# Estimation du risque par cross-validation
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 11))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.9% de risque estimé en cross-validation
+
+
+
