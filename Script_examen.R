@@ -494,7 +494,7 @@ erreur_knn <- function(echantillon = NULL, k) {
              k = k)
   return(c(erreur = mean(KNN != test$stabf)))
 }
-data_knn <- map_dfr(1:20, ~ erreur_knn(k = .x), .id = "k") %>% 
+data_knn <- map_dfr(1:15, ~ erreur_knn(k = .x), .id = "k") %>% 
   mutate(k = as.numeric(k))
 ggplot(data_knn, aes(x = k, y = erreur)) +
   geom_point() +
@@ -506,6 +506,34 @@ cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 11))
 cross_val %>% 
   summarise(mean(erreur))
 # 18.9% de risque estimé en cross-validation
+
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 7))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.6% de risque estimé en cross-validation
+
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 5))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.3% de risque estimé en cross-validation
+
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 13))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.4% de risque estimé en cross-validation
+
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 15))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.1% de risque estimé en cross-validation
+
+cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 19))
+cross_val %>% 
+  summarise(mean(erreur))
+# 18.4% de risque estimé en cross-validation
+
+## Random Forest
+
 
 
 
