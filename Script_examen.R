@@ -18,7 +18,13 @@ library(scales)
 library(mclust)
 
 theme_set(theme_light() +
-            theme(plot.title = element_markdown()))
+            theme(plot.title = element_markdown(),
+                  strip.background = element_blank(),
+                  strip.text = element_textbox(
+                    size = 12, 
+                    color = "white", fill = "#7888C0", box.color = "#000066",
+                    halign = 0.5, linetype = 1, r = unit(3, "pt"), width = unit(0.75, "npc"),
+                    padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3))))
 
 conflict_prefer(name = "filter", winner = "dplyr")
 conflict_prefer(name = "summarise", winner = "dplyr")
@@ -68,6 +74,8 @@ plot_ind + plot_axes
 
 ## CAH
 
+set.seed(7)
+
 # Dendrogramme en 3 classes
 dendro <- les_inconnus_réduits %>% 
   dist(method = "euclidean") %>% 
@@ -103,8 +111,8 @@ dendro_arbre <- dendro %>%
        x = NULL,
        title = "Classification ascendante hiérarchique selon la distance euclidienne") +
   geom_hline(yintercept = 25, linetype = "dashed", color = "purple3") +
-  geom_segment(aes(x = 179, xend = 179, y = 25, yend = 0), linetype = "dashed", color = "purple3") +
-  geom_segment(aes(x = 329, xend = 329, y = 25, yend = 0), linetype = "dashed", color = "purple3")
+  geom_segment(aes(x = 168, xend = 168, y = 25, yend = 0), linetype = "dashed", color = "purple3") +
+  geom_segment(aes(x = 324, xend = 324, y = 25, yend = 0), linetype = "dashed", color = "purple3")
 # Il y a un beau saut dans les inerties intra-classes et on retient 3 classes
 dendro_marches + dendro_arbre
 
@@ -138,6 +146,8 @@ replication_kmeans <- function(data, n_rep, nb_clust, result = "modele", nstart)
     return(kmeans_rep)
   }
 }
+
+set.seed(7)
 
 modeles <- vector(mode = "list", length = 10)
 for (i in 1:10) {
@@ -240,7 +250,6 @@ for (r in seq_len(ncol(clusters))) {
     }
   }
 }
-image(mat)
 (mat / ncol(clusters)) %>% 
   as.data.frame() %>% 
   rownames_to_column() %>% 
@@ -269,16 +278,65 @@ plot_ind3 <- fviz_cluster(kmeans_3, les_inconnus_réduits, ellipse.type = "conve
   theme(plot.title = element_markdown(size = 10),
         plot.subtitle = element_text(size = 7),
         legend.position = "none")
-plot_ind3 + plot_axes
+plot_ind3 + plot_axes 
 
 les_inconnus_shopenhauer$class_kmeans <- kmeans_3$cluster
 
 ## Modèle de mélanges Gaussiens
 
+set.seed(7)
+
 # A la vue de l'ACP, choix de modèle Gaussiens sphériques (et donc VII/EII pour l'opposer aux K-means)
-boules_gaus <- map(1:20, ~ Mclust(les_inconnus, G = .x, modelNames = c("VII", "EII")))
-boules_gaus[[1]]$classification
-plot(boules_gaus, what = "BIC")
+boules_gaus <- map(1:20, ~ Mclust(les_inconnus_réduits, G = .x, modelNames = "VII"))
+boules_gaus %>% 
+  map_dfr(~ c(BIC = as.numeric(.x[["bic"]]), ICL = as.numeric(.x[["icl"]])), .id = "k") %>% 
+  mutate(k = as.numeric(k)) %>% 
+  pivot_longer(-k) %>% 
+  ggplot(aes(x = k, y = value)) +
+    geom_point() +
+    geom_line() +
+    facet_wrap(vars(name), nrow = 1)
+# Sur les critères BIC et ICL, il n'y a pas l'air d'y avoir de maximum
+# Sur les bases des classifications précédantes et le coude dans les valeurs, on essaiera k = 3 classes
+
+# k = 3
+boules_gaus3 <- boules_gaus[[3]]
+plot_ind_gaus3 <- fviz_cluster(boules_gaus3, les_inconnus_réduits, ellipse.type = "norm",
+                               geom = "point", ggtheme = theme_light()) +
+  labs(title = "Projection des individus sur les 2 1<sup>ers</sup> axes de l'ACP",
+       subtitle = "Colorés selon les groupes faits par méthode des mélanges Gaussiens",
+       caption = "Ellipse de concentration selon la loi normale") +
+  theme(plot.title = element_markdown(size = 10),
+        plot.subtitle = element_text(size = 7),
+        legend.position = "none")
+plot_ind_gaus3 + plot_axes 
+
+les_inconnus_shopenhauer$class_gaus <- boules_gaus3$classification
+table(les_inconnus_shopenhauer$class_gaus, les_inconnus_shopenhauer$class_cah, deparse.level = 2, useNA = "ifany")
+table(les_inconnus_shopenhauer$class_kmeans, les_inconnus_shopenhauer$class_cah, deparse.level = 2, useNA = "ifany")
+les_inconnus_shopenhauer$class_kmeans <- factor(les_inconnus_shopenhauer$class_kmeans,
+                                                levels = c(1, 2, 3), labels = c(2, 1, 3)) %>% 
+  as.character() %>% as.numeric()
+# Recodage des clusters pour qu'ils représentent la même chose
+plot_diff <- les_inconnus_shopenhauer %>% 
+  select(starts_with("class")) %>% 
+  arrange(class_cah) %>% 
+  rownames_to_column() %>% 
+  mutate(rowname = as.numeric(rowname)) %>% 
+  pivot_longer(-rowname) %>% 
+  mutate(name = fct_recode(name,
+                           "CAH" = "class_cah",
+                           "Mélanges de\nGaussiennes" = "class_gaus",
+                           "K-means" = "class_kmeans")) %>% 
+  ggplot(aes(x = name, y = rowname, fill = as.factor(value))) +
+  scale_x_discrete(name = "Technique de classification non supervisée", expand = c(0, 0)) +
+  scale_y_continuous(name = "Nombre d'individus", expand = c(0, 0)) +
+  scale_fill_discrete(name = "Cluster n°") +
+  geom_tile()
+
+# Graphe de conclusions du non supervisé
+
+(plot_ind2 + plot_ind3) / (plot_ind_gaus3 + plot_diff)
 
 #### Partie classification supervisée ----
 
