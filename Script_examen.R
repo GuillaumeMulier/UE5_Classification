@@ -294,9 +294,16 @@ boules_gaus %>%
   ggplot(aes(x = k, y = value)) +
     geom_point() +
     geom_line() +
+    labs(x = "Nombre de clusters",
+       y = NULL,
+       title = "Evolution du BIC et de l'ICL en fonction du nombre de clusters formés en méthode EII") +
     facet_wrap(vars(name), nrow = 1)
 # Sur les critères BIC et ICL, il n'y a pas l'air d'y avoir de maximum
 # Sur les bases des classifications précédantes et le coude dans les valeurs, on essaiera k = 3 classes
+
+mclustBIC(les_inconnus_réduits) # Cette aspect du BIC et de l'ICL en fonction du nombre de clusters est constant pour toute les matrices de covariances
+mclustICL(les_inconnus_réduits)
+# On remarque que pour les matrices non orientées selon les axes, la fonction Mclust n'arrive pas à trouver de classes
 
 # k = 3
 boules_gaus3 <- boules_gaus[[3]]
@@ -312,9 +319,22 @@ plot_ind_gaus3 <- plot_ind_gaus3 +
   scale_x_reverse(labels = function(x) -x)
 plot_ind_gaus3 + plot_axes 
 
+# Différents k
+plot_ind_gaussian <- map(.x = c(3, 5, 7, 9),
+                         .f = ~ fviz_cluster(boules_gaus[[.x]], les_inconnus_réduits, ellipse.type = "norm",
+                                             geom = "point", ggtheme = theme_light()) +
+                           labs(title = NULL,
+                                subtitle = paste0("Colorés selon les groupes faits par méthode des mélanges Gaussiens\nk = ", .x)) +
+                           theme(plot.title = element_markdown(size = 10),
+                                 plot.subtitle = element_text(size = 7),
+                                 legend.position = "none") +
+                           scale_x_reverse(labels = function(x) -x))
+wrap_plots(plot_ind_gaussian) + plot_annotation(title = "Modèles de mélanges Gaussiens pour K croissants")
+
 les_inconnus_shopenhauer$class_gaus <- boules_gaus3$classification
 table(les_inconnus_shopenhauer$class_gaus, les_inconnus_shopenhauer$class_cah, deparse.level = 2, useNA = "ifany")
 table(les_inconnus_shopenhauer$class_kmeans, les_inconnus_shopenhauer$class_cah, deparse.level = 2, useNA = "ifany")
+table(les_inconnus_shopenhauer$class_kmeans, les_inconnus_shopenhauer$class_gaus, deparse.level = 2, useNA = "ifany")
 les_inconnus_shopenhauer$class_kmeans <- factor(les_inconnus_shopenhauer$class_kmeans,
                                                 levels = c(1, 2, 3), labels = c(2, 1, 3)) %>% 
   as.character() %>% as.numeric()

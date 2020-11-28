@@ -9,7 +9,8 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,
+                      cache = TRUE)
 ```
 
 ```{r packages, include = FALSE}
@@ -29,31 +30,25 @@ library(randomForest)
 ```
 
 ```{r helpers, include = FALSE}
-conflicted::conflict_prefer(name = "filter", winner = "dplyr")
-conflicted::conflict_prefer(name = "summarise", winner = "dplyr")
-conflicted::conflict_prefer(name = "map", winner = "purrr")
-conflicted::conflict_prefer(name = "get_legend", winner = "cowplot")
-conflicted::conflict_prefer(name = "margin", winner = "ggplot2")
-
-theme_set(theme_light() +
-            theme(plot.title = element_markdown(size = 10),
-                  plot.subtitle = element_markdown(size = 7),
-                  strip.background = element_blank(),
-                  strip.text = element_textbox(
-                    size = 12, 
-                    color = "white", fill = "#7888C0", box.color = "#000066",
-                    halign = 0.5, linetype = 1, r = unit(3, "pt"), width = unit(0.75, "npc"),
-                    padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3))))
+ggplot2::theme_set(theme_light() +
+                     theme(plot.title = element_markdown(size = 10),
+                           plot.subtitle = element_markdown(size = 7),
+                           strip.background = element_blank(),
+                           strip.text = element_textbox(
+                             size = 12, 
+                             color = "white", fill = "#7888C0", box.color = "#000066",
+                             halign = 0.5, linetype = 1, r = unit(3, "pt"), width = unit(0.75, "npc"),
+                             padding = ggplot2::margin(2, 0, 1, 0), margin = ggplot2::margin(3, 3, 3, 3))))
 ```
 
 # Exercice classification non supervisée
 
 ```{r chargement-données, include = FALSE}
-les_inconnus_réduits <- read_delim("DonneesNSGpe.txt", delim = "\t") %>% 
+les_inconnus_reduits <- read_delim("DonneesNSGpe.txt", delim = "\t") %>% 
   filter(Groupe == 7) %>% 
   select(-Groupe) %>% 
   mutate(across(everything(), .fns = ~ (.x - mean(.x)) / sd(.x)))
-les_inconnus_shopenhauer <- les_inconnus_réduits
+les_inconnus_shopenhauer <- les_inconnus_reduits
 ```
 
 ## Introduction
@@ -73,7 +68,7 @@ Pour visualiser les données, nous avons mis en oeuvre une analyse en composante
 En représentant les projections des individus sur ces 2 composantes, nous pouvons remarquer un nuage de points bien étallé. Et on a l'impression de distinguer 3 groupes de points dans ce nuage. Ces 3 groupes ont l'air d'être de forme sphérique, ce qui guidera nos choix de classifications par la suite.
 
 ```{r acp, fig.width = 9, fig.height = 7}
-ACP_inc <- PCA(les_inconnus_réduits, scale.unit = TRUE, graph = FALSE)
+ACP_inc <- PCA(les_inconnus_reduits, scale.unit = TRUE, graph = FALSE)
 plot_axes <- fviz_pca_var(ACP_inc, repel = TRUE) +
   labs(title = "Cercle des corrélations des variables aux axes 1 et 2") +
   theme(plot.title = element_markdown(size = 10))
@@ -93,7 +88,7 @@ Pour déterminer le nombre de clusters, nous avons calculé l'inertie intra-clas
 
 ```{r cah-dend, message = FALSE, warning = FALSE, fig.width = 10, fig.height = 6}
 set.seed(7)
-dendro <- les_inconnus_réduits %>% 
+dendro <- les_inconnus_reduits %>% 
   dist(method = "euclidean") %>% 
   hclust(method = "ward.D2") 
 dendro_marches <- cbind(x = 1:500, inertie = sort(dendro$height, decreasing = TRUE), color = c(1, 1, 1, rep(2, 497))) %>% 
@@ -167,7 +162,7 @@ Pour sélectionner le nombre de groupes optimal par les méthodes des K-means, n
 set.seed(7)
 modeles <- vector(mode = "list", length = 10)
 for (i in 1:10) {
-  modeles[[i]] <- replication_kmeans(data = les_inconnus_réduits,
+  modeles[[i]] <- replication_kmeans(data = les_inconnus_reduits,
                                      nb_clust = i, n_rep = 25, nstart = 25)
 }
 plot_inertie <- map_dfr(modeles, ~ c(intra = .x[["tot.withinss"]]), .id = "k") %>% 
@@ -207,7 +202,7 @@ Pour valider la stabilité de la méthode à l'initialisation aléatoire, nous a
 Nous avons donc regardé si les individus étaient répartis différemment selon le réplicat. Pour ce faire, pour les réplicats 2 à 25, nous avons attribué le numéro de cluster du réplicat 1 pour lequel l'effectif dans le réplicat (2 à 25) est majoritaire. Nous avons constaté que dans 70% des individus statistiques, le cluster est constant avec les 25 réplicats. En revanche, pour 30% des individus, on a des clusters différents avec les réplicats. En analysant les séquences de numéros de clusters, on a un déséquilibre pour le réplicat n°2. On peut remarquer que dans ce réplicat, en aggrégeant avec notre méthode, le cluster 1 du réplicat disparaît car il est minoritaire dans tous les clusters du réplicat 1. Ainsi, notre méthode n'est pas totalement satisfaisante dans ce cas de figure précis. Néanmoins, elle nous a permis de montrer la non constance de la classification pour le 2^ème^ réplicat. De plus, nous avons représenté la matrice de similarité des patients qui réprésente les mêmes patients en abscisse et en ordonnée, et les intersections entre 2 individus sont de plus en plus bleues en fonction du nombre de fois où ces 2 individus sont dans le même cluster parmi chaque réplicat. On voit là encore qu'il y a un léger déséquilibre avec un cluster qui n'est pas homogène avec les clusters des autres réplicats et qui est vraisemblablement le cas du réplicat 2.
 
 ```{r kmeans-25, fig.width = 10, fig.height = 6}
-kmeans_replicats <- replication_kmeans(data = les_inconnus_réduits, nb_clust = 3, n_rep = 25, result = "liste", nstart = 1)
+kmeans_replicats <- replication_kmeans(data = les_inconnus_reduits, nb_clust = 3, n_rep = 25, result = "liste", nstart = 1)
 plot_replicats <- kmeans_replicats[7, ] %>% 
   map_dfr(~ c(c1 = .x[1], c2 = .x[2], c3 = .x[3])) %>% 
   bind_cols(rep = 1:25) %>% 
@@ -251,7 +246,7 @@ plot_similar <- (mat / ncol(clusters)) %>%
                        name = NULL) +
   labs(x = NULL,
        y = NULL) +
-  annotate(geom = "richtext", x = 100, y = 150, size = 3, hjust = 0, vjust = 1,
+  annotate(geom = "richtext", x = 100, y = 100, size = 3, hjust = 0, vjust = 1,
            label = "**Visualisation des individus triés selon la <br> 1<sup>ère</sup> réplication de K-means :<br>Pourcentage de fois où les 2 individus sont <br>dans le même cluster sur les 25 réplicats**")
 plot_replicats + plot_similar
 ```
@@ -261,23 +256,102 @@ Ainsi, la méthode des K-means apparaît robuste pour classifier notre jeu de do
 Pour sélectionner notre classification finale, nous avons réalisé là encore 25 réplicats de la classification, puis nous avons sélectionné la classification qui minimisait le plus l'inertie intra-clusters. Nous avons représenté cette classification sur la figure suivante.
 
 ```{r plot-kmeanacp, fig.width = 9, fig.height = 7}
-kmeans_3 <- replication_kmeans(data = les_inconnus_réduits, nb_clust = 3, n_rep = 25, result = "mode", nstart = 25)
+kmeans_3 <- replication_kmeans(data = les_inconnus_reduits, nb_clust = 3, n_rep = 25, result = "mode", nstart = 25)
+kmeans_3$cluster <- factor(kmeans_3$cluster,
+                           levels = c(1, 2, 3), labels = c(2, 1, 3)) %>% 
+  as.character() %>% as.numeric()
 class(kmeans_3) <- "kmeans"
-plot_ind3 <- fviz_cluster(kmeans_3, les_inconnus_réduits, ellipse.type = "convex",
+plot_ind3 <- fviz_cluster(kmeans_3, les_inconnus_reduits, ellipse.type = "convex",
                           geom = "point", ggtheme = theme_light()) +
   labs(title = "Projection des individus sur les 2 1<sup>ers</sup> axes de l'ACP",
        subtitle = "Colorés selon les groupes faits par méthode K-means") +
   theme(plot.title = element_markdown(size = 10),
         plot.subtitle = element_text(size = 7),
-        legend.position = "none")
-# Pour une raison inconnue, fviz_cluster inverse les coordonnées sur le 1er axes principal
-plot_ind3 <- plot_ind3 +
+        legend.position = "none") +
   scale_x_reverse(labels = function(x) -x)
 plot_ind3 + plot_axes 
 les_inconnus_shopenhauer$class_kmeans <- kmeans_3$cluster
 ```
 
+### Modèle de mélanges Gaussiens
 
+A la vue des résultats de l'ACP, nous nous sommes concentré sur les modèles sphériques (EII et VII). Nous avons écarté la méthode EII de notre analyse principale car c'était redondant avec les K-means.
 
+Afin de choisir le nombre de classes, nous nous sommes appuyés sur l’analyse des maximums de vraissemblance, représentés par le score BIC et ICL. Néanmoins, la représentation suivante montre que le BIC et l'ICL n'atteignent pas de valeur maximale pour un nombre de classes de 20 ou moins. Etant donné nos résultats précédents et la représentation de l'ACP, nous nous sommes orienté vers 3 classes. De plus ça a l'air d'être le moment ou il y a une inflexion de l'augmentation du BIC/ICL. Nous avons regardé ce qui se passait pour les modèles non sphériques de matrice de covariance. Pour les modèles non orientés sur les axes, la fonction `Mclust` n'arrivait pas à calculer de classes (dans l'article de Scrucca, il est dit que cela demande une correction de la matrice de covariance), et pour les autres, on n'atteignait pas de maximum ni pour le BIC ni pour l'ICL.
 
+```{r choix-kgaus, fig.width = 10, fig.height = 6}
+set.seed(7)
+boules_gaus <- purrr::map(1:20, ~ Mclust(les_inconnus_reduits, G = .x, modelNames = "VII"))
+boules_gaus %>% 
+  map_dfr(~ c(BIC = as.numeric(.x[["bic"]]), ICL = as.numeric(.x[["icl"]])), .id = "k") %>% 
+  mutate(k = as.numeric(k)) %>% 
+  pivot_longer(-k) %>% 
+  ggplot(aes(x = k, y = value)) +
+    geom_point() +
+    geom_line() +
+    labs(x = "Nombre de clusters",
+         y = NULL,
+         title = "Evolution du BIC et de l'ICL en fonction du nombre de clusters formés en méthode EII") +
+    facet_wrap(vars(name), nrow = 1)
+```
+
+Nous avons représenté notre classification à 3 classes sur les 2 1^ers^ axes principaux et pouvont constater que les groupes formés sont similaires à ceux obtenus avec les méthodes précédentes avec les ellipses de concentrations selon la loi normale.
+
+```{r fig-gaus3, fig.width = 9, fig.height = 7}
+boules_gaus3 <- boules_gaus[[3]]
+plot_ind_gaus3 <- fviz_cluster(boules_gaus3, les_inconnus_reduits, ellipse.type = "norm",
+                               geom = "point", ggtheme = theme_light()) +
+  labs(title = "Projection des individus sur les 2 1<sup>ers</sup> axes de l'ACP",
+       subtitle = "Colorés selon les groupes faits par méthode des mélanges Gaussiens",
+       caption = "Ellipse de concentration selon la loi normale") +
+  theme(plot.title = element_markdown(size = 10),
+        plot.subtitle = element_text(size = 7),
+        legend.position = "none")
+plot_ind_gaus3 <- plot_ind_gaus3 +
+  scale_x_reverse(labels = function(x) -x)
+plot_ind_gaus3 + plot_axes 
+les_inconnus_shopenhauer$class_gaus <- boules_gaus3$classification
+```
+
+## Discussion et comparaisons des modèles
+
+L’objectif étant in fine la mise en évidence de la structure sous-jacente des données, une méthode pragmatique pour le choix du nombre de classes est de choisir une partition dont il sera possible d’interpréter les classes.
+
+Le modèle Gaussien minimise la variabilité intra-groupe, mais la sélection du nombre de groupes n'a pas l'air de s'arrêter (sur les critères du BIC et de l'ICL). Nous avons représenté des nombres de clusters croissants sur la figure suivante. En augmentant le nombre de clusters, on remarque que cela ne fait que segmenter les 3 groupes que nous avions définis. Il y a donc peut-être des groupes d'individus à l'intérieur de nos 3 clusters qui se ressemblent et peuvent se regrouper, mais le découpage en 3 groupes apparaît pertinent. La méthode des mélanges Gaussiens n'est peut-être ici pas adaptée pour déterminer le nombre de groupes.
+
+```{r clust-gaus, fig.height = 9, fig.width = 9}
+plot_ind_gaussian <- purrr::map(.x = c(3, 5, 7, 9),
+                                .f = ~ fviz_cluster(boules_gaus[[.x]], les_inconnus_reduits, ellipse.type = "norm",
+                                                    geom = "point", ggtheme = theme_light()) +
+                                  labs(title = NULL,
+                                       subtitle = paste0("Colorés selon les groupes faits par méthode des mélanges Gaussiens\nk = ", .x)) +
+                                  theme(plot.title = element_markdown(size = 10),
+                                        plot.subtitle = element_text(size = 7),
+                                        legend.position = "none") +
+                                  scale_x_reverse(labels = function(x) -x))
+wrap_plots(plot_ind_gaussian) + plot_annotation(title = "Modèles de mélanges Gaussiens pour K croissants")
+```
+
+Les groupes formés par les 3 méthodes sont très similaires, et on voit que peu d'individus sont dans des clusters différents entre les méthodes. La différence se fait surtout sur les individus à la frontière entre les groupes 1 et 3 (aux coordonnées x = 1 et y = -0.5 environ sur les 2 1^ers^ axes principaux). Nous pensons donc avoir une classification assez proche de la réalité. La méthode des mélanges Gaussiens donne les 3 mêmes groupes environ, mais a plus de mal pour déterminer le nombre de groupes.
+
+```{r comp-nonsup, fig.width = 9, fig.height = 9}
+plot_diff <- les_inconnus_shopenhauer %>%
+  select(starts_with("class")) %>%
+  arrange(class_cah) %>%
+  rownames_to_column() %>%
+  mutate(rowname = as.numeric(rowname)) %>%
+  pivot_longer(-rowname) %>%
+  mutate(name = fct_recode(name,
+                           "CAH" = "class_cah",
+                           "Mélanges de\nGaussiennes" = "class_gaus",
+                           "K-means" = "class_kmeans")) %>%
+  ggplot(aes(x = as.factor(name), y = rowname, fill = as.factor(value))) +
+  scale_x_discrete(name = "Techniques de classification non supervisée", expand = c(0, 0)) +
+  scale_y_continuous(name = "Nombre d'individus", expand = c(0, 0)) +
+  scale_fill_discrete(name = "Cluster n°") +
+  geom_tile() +
+  purrr::map(c(1.5, 2.5), ~ geom_vline(aes(xintercept = .x), size = 1, color = "black")) +
+  labs(title = "Clusters d'appartenance pour chaque technique")
+(plot_ind2 + plot_ind3) / (plot_ind_gaus3 + plot_diff)
+```
 
