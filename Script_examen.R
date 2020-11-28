@@ -19,6 +19,7 @@ library(mclust)
 library(cowplot)
 library(ggpubr)
 library(FNN)
+library(randomForest)
 
 theme_set(theme_light() +
             theme(plot.title = element_markdown(),
@@ -33,12 +34,13 @@ conflict_prefer(name = "filter", winner = "dplyr")
 conflict_prefer(name = "summarise", winner = "dplyr")
 conflict_prefer(name = "map", winner = "purrr")
 conflict_prefer(name = "get_legend", winner = "cowplot")
+conflict_prefer(name = "margin", winner = "ggplot2")
 
 #### Partie classification non supervisée ----
 
 ### Import de la base
 
-les_inconnus <- read_delim("DonneesNSGpe.txt", delim = "\t") %>% 
+les_inconnus <- read_delim("rapport_exam/DonneesNSGpe.txt", delim = "\t") %>% 
   filter(Groupe == 7) %>% 
   select(-Groupe)
 sum(is.na(les_inconnus)) # Pas de données manquantes
@@ -77,8 +79,6 @@ plot_ind + plot_axes
 ### Classification non supervisée
 
 ## CAH
-
-set.seed(7)
 
 # Dendrogramme en 3 classes
 dendro <- les_inconnus_réduits %>% 
@@ -152,10 +152,8 @@ replication_kmeans <- function(data, n_rep, nb_clust, result = "modele", nstart)
 }
 
 set.seed(7)
-
 modeles <- vector(mode = "list", length = 10)
 for (i in 1:10) {
-  cat(i, "\n")
   modeles[[i]] <- replication_kmeans(data = les_inconnus_réduits,
                                      nb_clust = i, n_rep = 25, nstart = 25)
 }
@@ -192,12 +190,6 @@ plot_inertie + plot_calinski
 
 # Choix de k = 3
 kmeans_replicats <- replication_kmeans(data = les_inconnus_réduits, nb_clust = 3, n_rep = 25, result = "liste", nstart = 1)
-kmeans_replicats[1, ] %>% 
-  map_dfr(~ c(clust = .x)) %>% 
-  t() %>% 
-  as.data.frame() %>% 
-  rownames_to_column() %>% 
-  mutate(rowname = str_remove(rowname, "^clust"))
 
 kmeans_replicats[7, ] %>% 
   map_dfr(~ c(c1 = .x[1], c2 = .x[2], c3 = .x[3])) %>% 
@@ -207,7 +199,7 @@ kmeans_replicats[7, ] %>%
   geom_point() +
   geom_line() +
   scale_color_discrete(name = "Clusters :", labels = c("1", "2", "3")) +
-  coord_cartesian(ylim = c(140, 180)) +
+  coord_cartesian(ylim = c(80, 320)) +
   labs(x = "Numéro de réplication",
        y = "Effectif",
        title = "Vérification de la taille des clusters en réplicant 25 fois les K-means")
@@ -269,7 +261,7 @@ for (r in seq_len(ncol(clusters))) {
                        name = NULL) +
   labs(x = NULL,
        y = NULL) +
-  annotate(geom = "richtext", x = 250, y = 200, size = 3, hjust = 0.2,
+  annotate(geom = "richtext", x = 250, y = 200, size = 3, hjust = 0,
            label = "**Visualisation des individus triés selon la <br> 1<sup>ère</sup> réplication de K-means :<br>Pourcentage de fois où les 2 individus sont <br>dans le même cluster sur les 25 réplicats**")
 
 # Représentation
@@ -534,6 +526,30 @@ cross_val %>%
 
 ## Random Forest
 
+# Modèle de base
+foret_base <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
+                           ntree = 1000, importance = TRUE, proximity = TRUE)
+foret_base$err.rate[1000, ] # 12.4% de risque
 
+# Influence du nombre d'arbres et de prédicteurs
+foret_nbtree <- map_dfr(seq(1000, 5000, by = 1000), 
+                        function(x) {
+                          foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
+                                                ntree = x, importance = TRUE, proximity = TRUE)
+                          return(foret$err.rate[x, ])
+                        },
+                        .id = "nb_tree")
+pmap_dfr(list(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5), 
+              nb_pred = rep(1:5, times = 5)),
+         function(nb_arbres, nb_pred) {
+           foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
+                                 ntree = nb_arbres, importance = TRUE, proximity = TRUE, mtry = nb_pred)
+           return(c(modele = paste0(nb_arbres, " arbres/", nb_pred, " prédicteurs"), foret$err.rate[nb_arbres, 1]))
+         })
+foret_nbtree$nb_tree <- as.numeric(foret_nbtree$nb_tree) * 1000
+foret_nbtree
+# Erreur minimale pour 3000 arbres
+
+# Influence du nombre de prédicteurs
 
 
