@@ -451,7 +451,7 @@ dix_pour_cent_test <- dix_pour_cent_reduits[-num_test, ]
 
 # Modèle avec même matrice de variance dans les 2 classes
 AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = c("EII", "VII"))
-AFD1$models
+AFD1$models$Stable$BIC
 # Modèle EII choisi car BIC plus grand
 
 AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "MclustDA", modelNames = c("EII", "VII"))
@@ -487,6 +487,7 @@ cross_val <- map_dfr(1:10, ~ erreur_AFD(.x), .id = "jeu")
 cross_val %>% 
   summarise(across(edda:MclustDA, .fns = ~ mean(.x)))
 # Pour cross-validation, MclustDA (variances différentes dans les groupes meilleur)
+cvMclustDA(AFD2)
 
 ## K nearest neighbours
 

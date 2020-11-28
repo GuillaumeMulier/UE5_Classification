@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = FALSE,
                       cache = TRUE)
 ```
 
-```{r packages, include = FALSE}
+```{r packages, include = FALSE, cache = FALSE}
 library(tidyverse)
 library(patchwork)
 library(ggtext)
@@ -27,9 +27,10 @@ library(cowplot)
 library(ggpubr)
 library(FNN)
 library(randomForest)
+library(flextable)
 ```
 
-```{r helpers, include = FALSE}
+```{r helpers, include = FALSE, cache = FALSE}
 ggplot2::theme_set(theme_light() +
                      theme(plot.title = element_markdown(size = 10),
                            plot.subtitle = element_markdown(size = 7),
@@ -355,3 +356,175 @@ plot_diff <- les_inconnus_shopenhauer %>%
 (plot_ind2 + plot_ind3) / (plot_ind_gaus3 + plot_diff)
 ```
 
+# Exercice classification supervisée
+
+## Introduction
+
+L’objectif de notre devoir était de réaliser une classification supervisée en utilisant les données de la base simulée ElecGrid qui s’intéresse à la stabilité du réseau électrique. Nous devions réaliser plusieurs méthodes de classification, valider nos résultats et comparer les différentes méthodes entre elles.
+
+```{r import-elec, include = FALSE, cache = FALSE}
+dix_pour_cent_reduits <- read_csv("https://archive.ics.uci.edu/ml/machine-learning-databases/00471/Data_for_UCI_named.csv") %>% 
+  select(-p1, -stab) %>% 
+  mutate(across(tau1:g4, .fns = ~ (.x - mean(.x)) / sd(.x)),
+         stabf = factor(stabf, levels = c("stable", "unstable"), labels = c("Stable", "Instable")))
+set.seed(7)
+dix_pour_cent_reduits <- dix_pour_cent_reduits[sample(1:nrow(dix_pour_cent_reduits), size = 1000), ]
+```
+
+## Description de la base
+
+Chaque observation représentait l'évaluation du système électrique avec 11 variables explicatives et 1 variable à expliquer :
+
+* La variable à expliquer est stabf et nous informait sur la stabilité du réseau électrique : "stable" ou "instable" ;
+* Les variables explicatives sont : 
+  * $\tau_1$, $\tau_2$, $\tau_3$, $\tau_4$ (électricité produite respectivement à partir du nœud 1, 2, 3 et 4) ; 
+  * $P_2$, $P_3$ et  $P_4$ (énergie consommée/produite respectivement sur le 2, 3 et 4ème nœuds). $P_1$ quant à lui, réprésentait la valeur absolue de la somme de $P_2$, $P_3$ et $P_4$. Cette variable étant une combinaison linéaire de 3 autres variables, elle n'apportait aucun information et n'a pas été utilisée ; 
+  * $G_1$, $G_2$, $G_3$ et $G_4$ (prix de l'électricité sur les noeuds 1 à 4 à chaque observation).
+  
+L'ensemble des ces variables permettent de déterminer si le réseau est stable ou non et étaient indépendantes les unes des autres.
+
+Nous avons travaillé sur un échantillon de 1000 observations sélectionnées au hasard parmi les 10000 observations de la base initiale. 361 observations étaient stables et 639 instables. Il n'y avait aucune donnée manquante. L'ordre de grandeur entre les variables était différent, nous avons donc centré et réduit les valeurs.
+
+Nous avons analysé les courbes de densité pour chaque variable en fonction du statut "stable" et "instable". Les courbes étaient superposables pour les variables p contrairement aux autres variabless. Nous pouvions donc faire l'hypothèse que les variables $\tau$ et $\gamma$ étaient plus discriminantes pour classer les observations.
+
+```{r, include = FALSE}
+helper <- tibble(noms = names(dix_pour_cent_reduits)[-12],
+                 titres = c("&tau;<sub>1</sub>", "&tau;<sub>2</sub>", "&tau;<sub>3</sub>", "&tau;<sub>4</sub>", 
+                            "P<sub>2</sub>", "P<sub>3</sub>", "P<sub>4</sub>",
+                            "G<sub>1</sub>", "G<sub>2</sub>", "G<sub>3</sub>", "G<sub>4</sub>"))
+```
+
+```{r plot-densités, fig.height = 8, fig.width = 10, cache = FALSE, warning = FALSE}
+density_plot <- function(var, data, titre){
+  ggplot(data = data, aes(x = .data[[var]], colour = stabf, fill = stabf))+
+    geom_density(alpha = 0.3) +
+    geom_vline(aes(xintercept = mean(.data[[var]])), linetype = "dashed", color = "darkgrey", size = 1) +
+    labs(x = titre[["titres"]][match(var, titre[["noms"]])],
+         y = "Densité") +  
+    scale_fill_discrete(name = "Stabilité du système") +
+    scale_color_discrete(name = "Stabilité du système") +
+    theme(axis.title.x = element_markdown())
+}
+legende <- get_legend(density_plot(var = "tau1", data = dix_pour_cent_reduits, titre = helper))
+liste_plot <- helper$noms %>% 
+  purrr::map(~ density_plot(var = .x, data = dix_pour_cent_reduits, titre = helper) +
+               theme(legend.position = "none"))
+liste_plot[[12]] <- legende
+ggarrange(plotlist = liste_plot, nrow = 3, ncol = 4)
+```
+
+L’analyse en composante principale à mis en avant 11 composantes principales qui expliquaient toutes environ la même part de variance (7 à 11%). La représentation des 2 groupes sur les 6 1ers axes principaux, mettait en évidence un nuage de point difficile à individualiser, mais se démarquant quand-même. Globalement, les groupes avaient une forme sphérique et un volume assez équivalent (sur la projection en tout cas).
+
+```{r acp-elec, cache = FALSE, fig.width = 9, fig.height = 7}
+ACP_elec <- PCA(dix_pour_cent_reduits, scale.unit = TRUE, graph = FALSE, quali.sup = 12, ncp = 11)
+plot_indACP <- function(acp, axes, couleur = "none") {
+  plot_axes <- fviz_pca_var(acp, repel = TRUE, axes = axes) +
+    labs(title = paste0("Cercle des corrélations des variables aux axes ", paste(axes, collapse = " et "))) +
+    theme(plot.title = element_markdown(size = 10))
+  plot_ind <- fviz_pca_ind(acp, geom.ind = "point", axes = axes, habillage = couleur) +
+    labs(title = paste0("Projection des individus sur les axes ", paste(axes, collapse = " et "), " de l'ACP")) +
+    theme(plot.title = element_markdown(size = 10),
+          legend.position = "bottom") +
+    scale_color_discrete(name = "Stabilité") +
+    guides(shape = FALSE,
+           color = guide_legend(override.aes = list(shape = c(19, 17))))
+  plot_ind + plot_axes
+}
+plot_indACP(acp = ACP_elec, axes = c(1, 2), couleur = 12)
+```
+
+## Mise en oeuvre des modèles
+
+Nous avons mis en oeuvre 3 modèles de classification supervisée : une analyse factorielle discriminante, une analyse des k plus proches voisins et une approche par random forest.
+
+Nous allons essayer de mettre en oeuvre ces classifications et les comparer en estimant les risques de classification pour chacune des 3 techniques étudiées. Pour l'approche par les random forests, le risque sera estimé par les erreurs out-of-the-bag. Pour l'analyse factorielle discriminante et les k plus proches voisins, nous estimerons les risques par cross-validation. Pour ce faire, nous avons aléatoirement découpé notre jeu de données en 10 groupes qui seront les échantillons tests tour à tour afin d'évaluer le risque. Le risque global calculé sera la moyenne des 10 risques obtenus par cette méthode.
+
+De plus, pour l'analyse factorielle discriminante et les k plus proches voisins, nous avons découpé l'échantillon aléatoirement en un échantillon d'apprentissage contenant 70% des observations et un jeu test contenant les 30% restants.
+
+### Analyse factorielle discriminante
+
+```{r crea-ech, cache = FALSE}
+set.seed(7)
+num_test <- sample(1000, size = 700, replace = FALSE)
+ordre_cv <- sample(1000, size = 1000, replace = FALSE)
+dix_pour_cent_CV <- cbind(dix_pour_cent_reduits[ordre_cv, ], ech = rep(1:10, each = 100))
+dix_pour_cent_app <- dix_pour_cent_reduits[num_test, ]
+dix_pour_cent_test <- dix_pour_cent_reduits[-num_test, ]
+```
+
+Selon la description de l'ACP, nous avons pris les modèles sphériques. Nous n'étions pas sûr du volume, donc nous avons comparé EII et VII sur le BIC sur l'échantillon d'apprentissage. Pour les 2 cas de figures testés (EDDA = matrices de covariances identiques dans toutes les modalités de la variable à prédire ; et MclustDA = matrices de covariances différentes dans chaque modalité de la variable à prédire), le modèle EII avait été choisi. Pour EDDA, le BIC était plus élevé, et pour MclustDA, les BIC étaient équivalents, mais on minimise le nombre de paramètres avec EII donc nous avons choisi l'approche EII. 
+
+```{r afd, cache = FALSE}
+AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = c("EII", "VII"))
+BIC_EDDA <- AFD1$models$Stable$BIC
+AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "MclustDA", modelNames = c("EII", "VII"))
+mod_stable <- which.max(AFD2$models$Stable$BIC[, 1])
+mod_instable <- which.max(AFD2$models$Instable$BIC[, 1])
+BIC_EIIvar <- AFD2$models$Stable$BIC[mod_stable, 1] + AFD2$models$Instable$BIC[mod_instable, 1]
+mod_stable2 <- which.max(AFD2$models$Stable$BIC[, 2])
+mod_instable2 <- which.max(AFD2$models$Instable$BIC[, 2])
+BIC_VIIvar <- AFD2$models$Stable$BIC[mod_stable2, 2] + AFD2$models$Instable$BIC[mod_instable2, 2]
+tab_bic_afd <- rbind(BIC_EDDA, cbind(EII = BIC_EIIvar, VII = BIC_VIIvar)) %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(rowname = c("EDDA", "MclustDA"))
+names(tab_bic_afd)[1] <- "Méthode d'estimation de la matrice de covariance"
+flextable(tab_bic_afd) %>% 
+  bold(i = 1:2, j = "EII") %>% 
+  align(align = "center", part = "header") %>% 
+  autofit() %>% 
+  set_caption("BIC selon l'estimation de la matrice de covariance")
+```
+
+Pour retenir ensuite la meilleure méthode concernant l'estimation des matrices de covariance, nous avons estimé le risque avec 2 méthodes : en estimant sur l'échantillon test, et par cross-validation. Sur la méthode de l'échantillon test et celle de cross-validation, la méthode MclustDA donne une meilleure minimisation du risque de classification. C'est donc l'analyse factorielle discriminante avec modèle EII et des matrices de covariances différentes selon les modalités stable et instable qui sera retenu. Le risque de classification pour ce modèle est de 17% en échantillon test et 19.5% en cross-validation. Il est à noter que nous avons aussi comparé avec la fonction `cvMclustDA` du package `mclust` qui donne un risque un peu différent du notre pour la cross-validation de 18%. Mais nous avons préféré utiliser notre méthode pour pouvoir comparer avec les k plus proches voisins.
+
+```{r test-afd, cache = FALSE}
+AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = "EII")
+AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "MclustDA", modelNames = "EII")
+vec_test <- c(Méthode = "Sur échantillon test", 
+              EDDA = round(summary(AFD1, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf)$err.newdata * 100, 1),
+              MclustDA = round(summary(AFD2, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf)$err.newdata * 100, 1))
+```
+
+```{r cv-afd, cache = FALSE}
+erreur_AFD <- function(echantillon) {
+  test <- dix_pour_cent_CV %>% filter(ech == echantillon)
+  train <- dix_pour_cent_CV %>% filter(ech != echantillon)
+  AFD1 <- MclustDA(train[,-12], class = train$stabf, modelType = "EDDA", modelNames = "EII")
+  err1 <- summary(AFD1, newdata = test[, -12], newclass = test$stabf)$err.newdata
+  AFD2 <- MclustDA(train[,-12], class = train$stabf, modelType = "MclustDA", modelNames = "EII")
+  err2 <- summary(AFD2, newdata = test[, -12], newclass = test$stabf)$err.newdata
+  return(c(edda = err1, MclustDA = err2))
+}
+cross_val <- map_dfr(1:10, ~ erreur_AFD(.x), .id = "jeu") %>% 
+  summarise(across(edda:MclustDA, .fns = ~ round(mean(.x) * 100, 1) %>% as.character)) %>% 
+  mutate(Méthode = "Cross-validation", .before = 1) %>% 
+  rename(EDDA = "edda")
+```
+
+```{r table-valid, cache = FALSE}
+bind_rows(vec_test, cross_val) %>% 
+  flextable() %>% 
+  autofit() %>% 
+  bold(i = 1:2, j = 3, part = "body") %>% 
+  set_caption("Risque calculé sur le modèle EII selon les 2 méthodes d'estimation de la matrice de covariance en %")
+```
+
+
+
+
+Résultats :
+
+2. Analyse de k plus proches voisins
+
+Nous avons réalisé une deuxième analyse en utilisant la méthode des k plus proches voisins avec la même population d’entrainement et de test. Nous avons fait varier le nombre de k voisins sélectionné pour trouver le k optimal puis réalisé un test de validation croisé pour améliorer nos résultats. Le risque était minimal était de 18,3% en utilisant les 11 plus proches voisins.
+
+3. Ramdon Forest
+
+Nous avons évalué la méthode Random Forest. Le risque d’erreur se stabilisait à partir de 4000 arbres. De plus le risque était minimal pour l’utilisation de 3 critères de classifications par arbre. Avec ces paramètres là, risque d’erreur estimé de 11,4%.
+
+Les variables p2, p3, p4 ne semblant pas être discriminantes à la lecture des courbes de densité, nous avons testé cette méthode en en supprimant ces variables. Cela n’améliorait pas notre risque d’erreur de classification. Il était mesuré à 12%.
+
+Conclusion :
+
+Les 3 méthodes utilisées pour réaliser une notre classification supervisée donnait des risques d’erreur différents. La méthode avec le meilleur risque de classification était la Ramdon Forest avec un risque de 14,6%.
