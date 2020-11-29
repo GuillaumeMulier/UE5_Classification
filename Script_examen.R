@@ -494,6 +494,7 @@ cvMclustDA(AFD2)
 
 # Trouver le meilleur K
 # Screening sur le jeu d'entraînement et de test
+set.seed(7)
 erreur_knn <- function(echantillon = NULL, k) {
   if (!is.null(echantillon)) {
     test <- dix_pour_cent_CV %>% filter(ech == echantillon) %>% select(-ech)
@@ -530,7 +531,7 @@ map_dfr(.x = c(5, 7, 11:20),
 prediction_KNN <- knn(train = dix_pour_cent_app[, -12],
                       test = dix_pour_cent_test[, -12],
                       cl = dix_pour_cent_app$stabf,
-                      k = 15)
+                      k = 5)
 
 ## Random Forest
 

@@ -10,7 +10,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,
-                      cache = TRUE)
+                      cache = FALSE)
 ```
 
 ```{r packages, include = FALSE, cache = FALSE}
@@ -58,7 +58,7 @@ L’objectif de notre devoir était de réaliser une classification non supervis
 
 Notre base de données comportait un ensemble de 500 observations et 10 variables mesurées pour chacune des observations. Nous n’avions aucune donnée manquante pour l'ensemble de la base. Les ordres de grandeur des variables étaient similaires ; néanmoins, afin d’éviter qu’une variable ne prenne trop d’importance du simple fait de son unité de mesure, nous avons centré et réduit l’ensemble des variables.
 
-Il existe de nombreuses méthodes de classification non supervisées. Nous nous sommes intéressés à 3 méthodes : la classification hiérarchique ascendante, les k-means et les modèles de mélange Gaussiens. Nous les avons ensuite comparé et avons discuté les avantages et les inconvénients de chacune dans notre classification.
+Il existe de nombreuses méthodes de classification non supervisées. Nous nous sommes intéressés à 3 méthodes : la classification hiérarchique ascendante, les k-means et les modèles de mélange Gaussiens. Nous les avons ensuite comparés et avons discuté les avantages et les inconvénients de chacune dans notre classification.
 
 ## Mise en oeuvre des modèles
 
@@ -157,7 +157,7 @@ replication_kmeans <- function(data, n_rep, nb_clust, result = "modele", nstart)
 }
 ```
 
-Pour sélectionner le nombre de groupes optimal par les méthodes des K-means, nous avons eu recours à 2 méthodes. La 1^ère^ est analogue à celle utilisée pour la classification ascendante hiérarchique : nous avons repéré le saut dans la diminution de l'inertie intra-classe avec le nombre de classes. Nous avons aussi représenté l'indice de Calinski-Harabasz qui doit être maximisé. Ces 2 méthodes nous indiquent un nombre optimal de clusters de 3. Nous réaliserons donc des clusters selon la méthode des K-means avec k = 3.
+Pour sélectionner le nombre de groupes optimal par la méthode des K-means, nous avons eu recours à 2 méthodes. La 1^ère^ est analogue à celle utilisée pour la classification ascendante hiérarchique : nous avons repéré le saut dans la diminution de l'inertie intra-classe avec le nombre de classes. Nous avons aussi représenté l'indice de Calinski-Harabasz qui doit être maximisé. Ces 2 méthodes nous indiquent un nombre optimal de clusters de 3. Nous réaliserons donc des clusters selon la méthode des K-means avec k = 3.
 
 ```{r choix-k, fig.width = 10, fig.height = 6}
 set.seed(7)
@@ -276,9 +276,9 @@ les_inconnus_shopenhauer$class_kmeans <- kmeans_3$cluster
 
 ### Modèle de mélanges Gaussiens
 
-A la vue des résultats de l'ACP, nous nous sommes concentré sur les modèles sphériques (EII et VII). Nous avons écarté la méthode EII de notre analyse principale car c'était redondant avec les K-means.
+A la vue des résultats de l'ACP, nous nous sommes concentrés sur les modèles sphériques (EII et VII). Nous avons écarté la méthode EII de notre analyse principale car c'était redondant avec les K-means.
 
-Afin de choisir le nombre de classes, nous nous sommes appuyés sur l’analyse des maximums de vraissemblance, représentés par le score BIC et ICL. Néanmoins, la représentation suivante montre que le BIC et l'ICL n'atteignent pas de valeur maximale pour un nombre de classes de 20 ou moins. Etant donné nos résultats précédents et la représentation de l'ACP, nous nous sommes orienté vers 3 classes. De plus ça a l'air d'être le moment ou il y a une inflexion de l'augmentation du BIC/ICL. Nous avons regardé ce qui se passait pour les modèles non sphériques de matrice de covariance. Pour les modèles non orientés sur les axes, la fonction `Mclust` n'arrivait pas à calculer de classes (dans l'article de Scrucca, il est dit que cela demande une correction de la matrice de covariance), et pour les autres, on n'atteignait pas de maximum ni pour le BIC ni pour l'ICL.
+Afin de choisir le nombre de classes, nous nous sommes appuyés sur l’analyse des maximums de vraissemblance, représentés par les scores BIC et ICL. Néanmoins, la représentation suivante montre que le BIC et l'ICL n'atteignent pas de valeur maximale pour un nombre de classes de 20 ou moins. Etant donné nos résultats précédents et la représentation de l'ACP, nous nous sommes orientés vers 3 classes. De plus ça a l'air d'être le moment où il y a une inflexion de l'augmentation du BIC/ICL. Nous avons regardé ce qui se passait pour les modèles non sphériques de matrice de covariance. Pour les modèles non orientés sur les axes, la fonction `Mclust` n'arrivait pas à calculer de classes (dans l'article de Scrucca, il est dit que cela demande une correction de la matrice de covariance), et pour les autres, on n'atteignait pas de maximum ni pour le BIC ni pour l'ICL de façon analogue à notre analyse principale.
 
 ```{r choix-kgaus, fig.width = 10, fig.height = 6}
 set.seed(7)
@@ -380,8 +380,6 @@ Chaque observation représentait l'évaluation du système électrique avec 11 v
   * $\tau_1$, $\tau_2$, $\tau_3$, $\tau_4$ (électricité produite respectivement à partir du nœud 1, 2, 3 et 4) ; 
   * $P_2$, $P_3$ et  $P_4$ (énergie consommée/produite respectivement sur le 2, 3 et 4ème nœuds). $P_1$ quant à lui, réprésentait la valeur absolue de la somme de $P_2$, $P_3$ et $P_4$. Cette variable étant une combinaison linéaire de 3 autres variables, elle n'apportait aucun information et n'a pas été utilisée ; 
   * $G_1$, $G_2$, $G_3$ et $G_4$ (prix de l'électricité sur les noeuds 1 à 4 à chaque observation).
-  
-L'ensemble des ces variables permettent de déterminer si le réseau est stable ou non et étaient indépendantes les unes des autres.
 
 Nous avons travaillé sur un échantillon de 1000 observations sélectionnées au hasard parmi les 10000 observations de la base initiale. 361 observations étaient stables et 639 instables. Il n'y avait aucune donnée manquante. L'ordre de grandeur entre les variables était différent, nous avons donc centré et réduit les valeurs.
 
@@ -476,7 +474,7 @@ flextable(tab_bic_afd) %>%
   set_caption("BIC selon l'estimation de la matrice de covariance")
 ```
 
-Pour retenir ensuite la meilleure méthode concernant l'estimation des matrices de covariance, nous avons estimé le risque avec 2 méthodes : en estimant sur l'échantillon test, et par cross-validation. Sur la méthode de l'échantillon test et celle de cross-validation, la méthode MclustDA donne une meilleure minimisation du risque de classification. C'est donc l'analyse factorielle discriminante avec modèle EII et des matrices de covariances différentes selon les modalités stable et instable qui sera retenu. Le risque de classification pour ce modèle est de 17% en échantillon test et 19.5% en cross-validation. Il est à noter que nous avons aussi comparé avec la fonction `cvMclustDA` du package `mclust` qui donne un risque un peu différent du notre pour la cross-validation de 18%. Mais nous avons préféré utiliser notre méthode pour pouvoir comparer avec les k plus proches voisins.
+Pour retenir ensuite la meilleure méthode concernant l'estimation des matrices de covariance, nous avons estimé le risque avec 2 méthodes : en estimant sur l'échantillon test, et par cross-validation. Sur l'échantillon test et la cross-validation, la méthode MclustDA donne une meilleure minimisation du risque de classification. C'est donc l'analyse factorielle discriminante avec modèle EII et des matrices de covariances différentes selon les modalités stable et instable qui sera retenu. Le risque de classification pour ce modèle est de 17% en échantillon test et 19.5% en cross-validation. Il est à noter que nous avons aussi comparé avec la fonction `cvMclustDA` du package `mclust` qui donne un risque un peu différent du notre pour la cross-validation de 18%. Mais nous avons préféré utiliser notre méthode pour pouvoir comparer avec les k plus proches voisins.
 
 ```{r test-afd, cache = FALSE}
 AFD1 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, modelType = "EDDA", modelNames = "EII")
@@ -518,6 +516,7 @@ Nous avons réalisé une deuxième analyse en utilisant la méthode des k plus p
 Une 1^ère^ sélection du nombre de K s'est faite en screenant les k de 1 à 20 et en évaluant le risque de classification sur l'échantillon test. Nous avons retenu les k pour les k pour lesquels on avait un risque $\leq$ 20%. Ensuite, nous avons réalisé une cross-validation sur le même découpage en 10 groupes que celle effectuée pour l'analyse factorielle discriminante.
 
 ```{r knn-deterk, cache = FALSE, fig.height = 5, fig.width = 7}
+set.seed(7)
 erreur_knn <- function(echantillon = NULL, k) {
   if (!is.null(echantillon)) {
     test <- dix_pour_cent_CV %>% filter(ech == echantillon) %>% select(-ech)
@@ -556,19 +555,19 @@ flextable(tab_knn) %>%
   width(j = 2, width = 2) %>% 
   set_header_labels(risque = "Risque de classification") %>% 
   align(j = 1:2, align = "center", part = "all") %>% 
-  bg(i = 7, j = 1:2, bg = "#0099FF") %>%
-  color(i = 7, j = 1:2, color = "white") %>%
-  bold(i = 7, j = 1:2) %>% 
+  bg(i = 1, j = 1:2, bg = "#0099FF") %>%
+  color(i = 1, j = 1:2, color = "white") %>%
+  bold(i = 1, j = 1:2) %>% 
   set_caption("Détermination du nombre de voisins optimal par cross-validation")
 ```
 
-Finalement, le risque de classification minimal est trouvé pour k = 15 et nous retenons donc ce modèle pour la classification par les k plus proches voisins. Les risque de classification est alors de 18.1%.
+Finalement, le risque de classification minimal est trouvé pour k = 5 et nous retenons donc ce modèle pour la classification par les k plus proches voisins. Les risque de classification est alors de 18.3%.
 
 ```{r pred-knn}
 prediction_KNN <- knn(train = dix_pour_cent_app[, -12],
                       test = dix_pour_cent_test[, -12],
                       cl = dix_pour_cent_app$stabf,
-                      k = 15)
+                      k = 5)
 ```
 
 
@@ -599,7 +598,10 @@ data.frame(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5),
   bg(i = 8, j = 1:3, bg = "#0099FF") %>%
   color(i = 8, j = 1:3, color = "white") %>%
   bold(i = 8, j = 1:3) %>% 
-  set_caption("Optimisation du nombre d'arbres et de prédicteur pour le modèle random forest")
+  set_caption("Optimisation du nombre d'arbres et de prédicteur pour le modèle random forest") %>% 
+  set_header_labels(nb_arbres = "Nombre d'arbres",
+                    nb_pred = "Nombre de prédicteurs",
+                    erreur = "Risque de classification")
 ```
 
 
@@ -609,13 +611,13 @@ Pour ce modèle, le risque de classification est de 11.8%. En inspectant les imp
 
 Nous avons essayé de retirer ces variables pour voir si la qualité de la prédiction s'améliorait, mais le risque de classification restait dans le même ordre de grandeur (11.9%).
 
-### Synthèse des 3 modèles
+## Comparaison des 3 modèles
 
 L'analyse factorielle discriminante et les k plus proches voisins donnent des résultats similaires en terme de risque et sont une bonne approche dans un 1^er^ temps. La méthode des random forest permet d'affiner le résultat et d'obtenir un meilleur risque de classification.
 
-Il serait sûrement possible de gagner encore en précision en utilisant des modèles plus compliqués. Tout dépend du risque d'erreur qu'on est prêt à faire dans notre classification. Ici, c'est pour un outil de contrôle des flux et des réseaux de transport d'électricité. Nous n'avons aucune idée de l'erreur qu'il est au maximum toléré dans ces situations, mais nous nous doutons que pour des ingénieurs en électricité soucieux d'être les plus précis possible, notre résultat est peut-être encore à améliorer.
+Nous avons représenté les résultats des différentes classifications pour l'échantillon test. Il y a quelques erreurs de classification du groupe instable mais c'est assez similaire pour les 3 méthodes. Par contre, les random forests font moins d'erreurs que les 2 autres méthodes sur la classification des stables. Ainsi, les random forests ont l'air de moins surestimer l'instabilité. Nous pensons donc que des 3 méthodes utilisées, les random forests sont la méthode la plus adaptée à utiliser pour classifier notre jeu de données.
 
-```{r}
+```{r, fig.width = 7, fig.height = 5}
 prediction_RF <- foret_nbtree[[8]]$predicted[-num_test]
 donnee_cartechaude <- data.frame(base = as.character(dix_pour_cent_test$stabf),
                                  AFD = as.character(prediction_ADF),
@@ -630,6 +632,14 @@ donnee_cartechaude %>%
                        labels = c("Base test", "Analyse factorielle\ndiscriminante",
                                    "K plus proches\nvoisins", "Random Forest"))) %>% 
   ggplot(aes(x = name, y = ind, fill = factor(value))) +
-  geom_tile()
+  scale_x_discrete(name = "Techniques de classification supervisée", expand = c(0, 0)) +
+  scale_y_continuous(name = "Nombre d'individus", expand = c(0, 0)) +
+  scale_fill_discrete(name = "Stabilité du composant") +
+  labs(title = "Classification supervisée de l'échantillon test") +
+  geom_tile() +
+  purrr::map(c(0.5, 1.5, 2.5, 3.5), ~ geom_vline(aes(xintercept = .x), size = 1, color = "black"))
 ```
+
+Il serait sûrement possible de gagner encore en précision en utilisant des modèles plus compliqués. Tout dépend du risque d'erreur qu'on est prêt à faire dans notre classification. Ici, c'est pour un outil de contrôle des flux et des réseaux de transport d'électricité. Nous n'avons aucune idée de l'erreur qu'il est au maximum toléré dans ces situations, mais nous nous doutons que pour des ingénieurs en électricité soucieux d'être les plus précis possible, notre résultat est peut-être encore à améliorer.
+
 
