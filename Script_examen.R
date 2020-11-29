@@ -472,6 +472,7 @@ AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, model
 summary(AFD1, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf) # Risque = 17.33%
 summary(AFD2, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf) # Risque = 17.33%
 # Même risque pour les 2 mais pas même erreur
+prediction_ADF <- predict(AFD2, newdata = dix_pour_cent_test[, -12])$classification
 
 # Cross-validation sur jeu complet
 erreur_AFD <- function(echantillon) {
@@ -511,66 +512,65 @@ data_knn <- map_dfr(1:15, ~ erreur_knn(k = .x), .id = "k") %>%
   mutate(k = as.numeric(k))
 ggplot(data_knn, aes(x = k, y = erreur)) +
   geom_point() +
-  geom_line()
-# Minimum pour k = 11
+  geom_line() +
+  geom_hline(yintercept = 0.2, linetype = "dashed") +
+  labs(y = "Risque de classification",
+       title = "Sélection initiale du K")
+# On prend les 12 valeurs qui sont inférieurs à 0.20 pour la cross-validation
 
 # Estimation du risque par cross-validation
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 11))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.9% de risque estimé en cross-validation
+map_dfr(.x = c(5, 7, 11:20),
+        function(ka) {
+          map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = ka)) %>% 
+            summarise(mean(erreur))
+        },
+        .id = "k") %>% 
+  mutate(k = c(5, 7, 11:20))
 
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 7))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.6% de risque estimé en cross-validation
-
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 5))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.3% de risque estimé en cross-validation
-
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 13))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.4% de risque estimé en cross-validation
-
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 15))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.1% de risque estimé en cross-validation
-
-cross_val <- map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = 19))
-cross_val %>% 
-  summarise(mean(erreur))
-# 18.4% de risque estimé en cross-validation
+prediction_KNN <- knn(train = dix_pour_cent_app[, -12],
+                      test = dix_pour_cent_test[, -12],
+                      cl = dix_pour_cent_app$stabf,
+                      k = 15)
 
 ## Random Forest
 
-# Modèle de base
-foret_base <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
-                           ntree = 1000, importance = TRUE, proximity = TRUE)
-foret_base$err.rate[1000, ] # 12.4% de risque
-
 # Influence du nombre d'arbres et de prédicteurs
-foret_nbtree <- map_dfr(seq(1000, 5000, by = 1000), 
-                        function(x) {
-                          foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
-                                                ntree = x, importance = TRUE, proximity = TRUE)
-                          return(foret$err.rate[x, ])
-                        },
-                        .id = "nb_tree")
-pmap_dfr(list(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5), 
-              nb_pred = rep(1:5, times = 5)),
-         function(nb_arbres, nb_pred) {
-           foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
-                                 ntree = nb_arbres, importance = TRUE, proximity = TRUE, mtry = nb_pred)
-           return(c(modele = paste0(nb_arbres, " arbres/", nb_pred, " prédicteurs"), foret$err.rate[nb_arbres, 1]))
-         })
-foret_nbtree$nb_tree <- as.numeric(foret_nbtree$nb_tree) * 1000
+set.seed(7)
+foret_nbtree <- pmap_dfr(list(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5), 
+                              nb_pred = rep(1:5, times = 5)),
+                         function(nb_arbres, nb_pred) {
+                           foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
+                                                 ntree = nb_arbres, importance = TREU, proximity = FALSE, mtry = nb_pred)
+                           return(foret)
+                         })
 foret_nbtree
-# Erreur minimale pour 3000 arbres
+# Erreur minimale pour 2000 arbres avec 3 prédicteurs
+# Assez proche de la règle de sqrt(P) qui donnerait 3-4 prédicteurs (même c'est la règle)
 
-# Influence du nombre de prédicteurs
+foret_nbtree[[8]]
+foret_nbtree[[8]]$predicted
+foret_nbtree[[8]]$importance
+# Les 3 plus faibles importances sont P2, P3 et P4
 
+# Modèle sans les 3 variables p
+foret_base <- randomForest(dix_pour_cent_reduits %>% select(-stabf, -p2, -p3, -p4), dix_pour_cent_reduits$stabf,
+                           ntree = 2000, importance = TRUE, proximity = TRUE, mtry = 3)
+foret_base # 11.9% de risque
 
+prediction_RF <- foret_nbtree[[8]]$predicted[-num_test]
+
+# Représentation en heatmap des données de l'échantillon test
+donnee_cartechaude <- data.frame(base = as.character(dix_pour_cent_test$stabf),
+                                 AFD = as.character(prediction_ADF),
+                                 KNN = as.character(prediction_KNN),
+                                 RF = as.character(prediction_RF))
+donnee_cartechaude %>% 
+  arrange(base) %>% 
+  mutate(ind = row_number(), .before = 1) %>% 
+  pivot_longer(-ind) %>% 
+  mutate(name = factor(name, 
+                       levels = c("base", "AFD", "KNN", "RF"),
+                       labels = c("Base test", "Analyse factorielle\ndiscriminante",
+                                   "K plus proches\nvoisins", "Random Forest"))) %>% 
+  ggplot(aes(x = name, y = ind, fill = factor(value))) +
+  geom_tile()

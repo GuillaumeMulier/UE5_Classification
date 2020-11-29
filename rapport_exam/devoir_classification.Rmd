@@ -484,6 +484,7 @@ AFD2 <- MclustDA(dix_pour_cent_app[,-12], class = dix_pour_cent_app$stabf, model
 vec_test <- c(Méthode = "Sur échantillon test", 
               EDDA = round(summary(AFD1, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf)$err.newdata * 100, 1),
               MclustDA = round(summary(AFD2, newdata = dix_pour_cent_test[, -12], newclass = dix_pour_cent_test$stabf)$err.newdata * 100, 1))
+prediction_ADF <- predict(AFD2, newdata = dix_pour_cent_test[, -12])$classification
 ```
 
 ```{r cv-afd, cache = FALSE}
@@ -510,21 +511,125 @@ bind_rows(vec_test, cross_val) %>%
   set_caption("Risque calculé sur le modèle EII selon les 2 méthodes d'estimation de la matrice de covariance en %")
 ```
 
+### K plus proches voisins
+
+Nous avons réalisé une deuxième analyse en utilisant la méthode des k plus proches voisins avec la même population d’entrainement et de test que pour l'analyse factorielle discriminante afin de pouvoir au mieux comparer les 2 techniques.
+
+Une 1^ère^ sélection du nombre de K s'est faite en screenant les k de 1 à 20 et en évaluant le risque de classification sur l'échantillon test. Nous avons retenu les k pour les k pour lesquels on avait un risque $\leq$ 20%. Ensuite, nous avons réalisé une cross-validation sur le même découpage en 10 groupes que celle effectuée pour l'analyse factorielle discriminante.
+
+```{r knn-deterk, cache = FALSE, fig.height = 5, fig.width = 7}
+erreur_knn <- function(echantillon = NULL, k) {
+  if (!is.null(echantillon)) {
+    test <- dix_pour_cent_CV %>% filter(ech == echantillon) %>% select(-ech)
+    train <- dix_pour_cent_CV %>% filter(ech != echantillon) %>% select(-ech)
+  } else {
+    train <- dix_pour_cent_app 
+    test <- dix_pour_cent_test
+  }
+  KNN <- knn(train = train[, -12],
+             test = test[, -12],
+             cl = train$stabf,
+             k = k)
+  return(c(erreur = mean(KNN != test$stabf)))
+}
+data_knn <- map_dfr(1:20, ~ erreur_knn(k = .x), .id = "k") %>% 
+  mutate(k = as.numeric(k))
+ggplot(data_knn, aes(x = k, y = erreur)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.2, linetype = "dashed") +
+  labs(y = "Risque de classification",
+       title = "Sélection initiale du K")
+```
+
+Sans surprise, les k impairs ont des risques moins élevés. En effet, on s'imagine que comme nous avons 2 groupes à différencier, rechercher la majorité par rapport à un nombre impair de voisins permet de se soustraire aux ex aequo. Avec un K à 5, 7 et de 11 à 20, nous avons un risque $\leq$ 20%. Nous avons donc regardé les risques en cross-validation pour ces k.
+
+```{r tab-knn, cache = FALSE}
+tab_knn <- map_dfr(.x = c(5, 7, 11:20),
+                   function(ka) {
+                     map_dfr(1:10, ~ erreur_knn(echantillon = .x, k = ka)) %>% 
+                       summarise(risque = round(mean(erreur) * 100, 1))
+                   },
+                   .id = "k") %>% 
+  mutate(k = c(5, 7, 11:20))
+flextable(tab_knn) %>% 
+  width(j = 2, width = 2) %>% 
+  set_header_labels(risque = "Risque de classification") %>% 
+  align(j = 1:2, align = "center", part = "all") %>% 
+  bg(i = 7, j = 1:2, bg = "#0099FF") %>%
+  color(i = 7, j = 1:2, color = "white") %>%
+  bold(i = 7, j = 1:2) %>% 
+  set_caption("Détermination du nombre de voisins optimal par cross-validation")
+```
+
+Finalement, le risque de classification minimal est trouvé pour k = 15 et nous retenons donc ce modèle pour la classification par les k plus proches voisins. Les risque de classification est alors de 18.1%.
+
+```{r pred-knn}
+prediction_KNN <- knn(train = dix_pour_cent_app[, -12],
+                      test = dix_pour_cent_test[, -12],
+                      cl = dix_pour_cent_app$stabf,
+                      k = 15)
+```
 
 
+### Random forest
 
-Résultats :
+Pour déterminer le nombre d'arbres optimal nous avons recherché parmi 5 nombres d'arbres (1000, 2000, 3000, 4000 et 5000) et parmi 5 nombres de prédicteurs (1, 2, 3, 4 et 5). Pour chaque couple, nous allons regarder le risque out-of-the-bag afin de déterminer le couple prédicteur/arbre.
 
-2. Analyse de k plus proches voisins
+```{r rech-rf, cache = TRUE}
+set.seed(7)
+foret_nbtree <- pmap(list(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5), 
+                          nb_pred = rep(1:5, times = 5)),
+                     function(nb_arbres, nb_pred) {
+                       foret <- randomForest(dix_pour_cent_reduits[, -12], dix_pour_cent_reduits$stabf,
+                                             ntree = nb_arbres, importance = TRUE, proximity = TRUE, mtry = nb_pred)
+                       return(foret)
+                     })
+```
 
-Nous avons réalisé une deuxième analyse en utilisant la méthode des k plus proches voisins avec la même population d’entrainement et de test. Nous avons fait varier le nombre de k voisins sélectionné pour trouver le k optimal puis réalisé un test de validation croisé pour améliorer nos résultats. Le risque était minimal était de 18,3% en utilisant les 11 plus proches voisins.
+```{r}
+erreurs <- foret_nbtree %>%
+  map_dbl(~ .x$err.rate[nrow(.x$err.rate), 1])
+data.frame(nb_arbres = rep(seq(1000, 5000, by = 1000), each = 5),
+           nb_pred = rep(1:5, times = 5),
+           erreur = erreurs) %>% 
+  mutate(erreur = round(erreur * 100, 1)) %>% 
+  flextable() %>% 
+  autofit() %>% 
+  bg(i = 8, j = 1:3, bg = "#0099FF") %>%
+  color(i = 8, j = 1:3, color = "white") %>%
+  bold(i = 8, j = 1:3) %>% 
+  set_caption("Optimisation du nombre d'arbres et de prédicteur pour le modèle random forest")
+```
 
-3. Ramdon Forest
 
-Nous avons évalué la méthode Random Forest. Le risque d’erreur se stabilisait à partir de 4000 arbres. De plus le risque était minimal pour l’utilisation de 3 critères de classifications par arbre. Avec ces paramètres là, risque d’erreur estimé de 11,4%.
+On a donc un risque de classification minimal pour 2000 arbres et 3 prédicteurs. Ce sera donc notre modèle.
 
-Les variables p2, p3, p4 ne semblant pas être discriminantes à la lecture des courbes de densité, nous avons testé cette méthode en en supprimant ces variables. Cela n’améliorait pas notre risque d’erreur de classification. Il était mesuré à 12%.
+Pour ce modèle, le risque de classification est de 11.8%. En inspectant les importances des variables dans la construction de la forêt, les 3 variables ayant le moins d'importance sont $P_2$, $P_3$ et $P_4$, ainsi que nous l'avions suspecté avec la description des densités des variables.
 
-Conclusion :
+Nous avons essayé de retirer ces variables pour voir si la qualité de la prédiction s'améliorait, mais le risque de classification restait dans le même ordre de grandeur (11.9%).
 
-Les 3 méthodes utilisées pour réaliser une notre classification supervisée donnait des risques d’erreur différents. La méthode avec le meilleur risque de classification était la Ramdon Forest avec un risque de 14,6%.
+### Synthèse des 3 modèles
+
+L'analyse factorielle discriminante et les k plus proches voisins donnent des résultats similaires en terme de risque et sont une bonne approche dans un 1^er^ temps. La méthode des random forest permet d'affiner le résultat et d'obtenir un meilleur risque de classification.
+
+Il serait sûrement possible de gagner encore en précision en utilisant des modèles plus compliqués. Tout dépend du risque d'erreur qu'on est prêt à faire dans notre classification. Ici, c'est pour un outil de contrôle des flux et des réseaux de transport d'électricité. Nous n'avons aucune idée de l'erreur qu'il est au maximum toléré dans ces situations, mais nous nous doutons que pour des ingénieurs en électricité soucieux d'être les plus précis possible, notre résultat est peut-être encore à améliorer.
+
+```{r}
+prediction_RF <- foret_nbtree[[8]]$predicted[-num_test]
+donnee_cartechaude <- data.frame(base = as.character(dix_pour_cent_test$stabf),
+                                 AFD = as.character(prediction_ADF),
+                                 KNN = as.character(prediction_KNN),
+                                 RF = as.character(prediction_RF))
+donnee_cartechaude %>% 
+  arrange(base) %>% 
+  mutate(ind = row_number(), .before = 1) %>% 
+  pivot_longer(-ind) %>% 
+  mutate(name = factor(name, 
+                       levels = c("base", "AFD", "KNN", "RF"),
+                       labels = c("Base test", "Analyse factorielle\ndiscriminante",
+                                   "K plus proches\nvoisins", "Random Forest"))) %>% 
+  ggplot(aes(x = name, y = ind, fill = factor(value))) +
+  geom_tile()
+```
+
